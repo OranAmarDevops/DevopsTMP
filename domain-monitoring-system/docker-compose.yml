@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  app:
+    image: oranamar2003/domain-monitoring-system:latest
+    container_name: domain-monitor-app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - dms-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: domain-monitor-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - dms-network
+
+networks:
+  dms-network:
+    driver: bridge

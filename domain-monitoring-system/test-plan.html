@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial; margin: 40px; }
+    h1 { color: #2c3e50; }
+    h2 { color: #34495e; margin-top: 30px; }
+    table { border-collapse: collapse; width: 100%; }
+    th { background: #2c3e50; color: white; padding: 10px; text-align: left; }
+    td { border: 1px solid #bdc3c7; padding: 8px; }
+    tr:nth-child(even) { background: #f2f2f2; }
+  </style>
+</head>
+<body>
+<h1>Test Plan — Domain Monitoring System</h1>
+
+<h2>1. User Registration</h2>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Expected</th></tr>
+  <tr><td>1</td><td>Successful registration</td><td>Redirect to dashboard</td></tr>
+  <tr><td>2</td><td>Duplicate username</td><td>Error 409</td></tr>
+  <tr><td>3</td><td>Empty fields</td><td>Validation error</td></tr>
+  <tr><td>4</td><td>Short password</td><td>Min 4 chars error</td></tr>
+</table>
+
+<h2>2. User Login</h2>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Expected</th></tr>
+  <tr><td>5</td><td>Successful login</td><td>Redirect to dashboard</td></tr>
+  <tr><td>6</td><td>Wrong password</td><td>Error 401</td></tr>
+  <tr><td>7</td><td>Non-existent user</td><td>Error 401</td></tr>
+  <tr><td>8</td><td>Session timeout</td><td>Redirect to login</td></tr>
+</table>
+
+<h2>3. Domain Management</h2>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Expected</th></tr>
+  <tr><td>9</td><td>Add domain</td><td>Appears in table</td></tr>
+  <tr><td>10</td><td>Duplicate domain</td><td>Error 409</td></tr>
+  <tr><td>11</td><td>Bulk upload</td><td>"Added X domains"</td></tr>
+  <tr><td>12</td><td>Remove domain</td><td>Removed</td></tr>
+  <tr><td>13</td><td>Remove all</td><td>Table empty</td></tr>
+</table>
+
+<h2>4. Monitoring</h2>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Expected</th></tr>
+  <tr><td>14</td><td>Scan live domain</td><td>Status=Live, SSL info</td></tr>
+  <tr><td>15</td><td>Scan unreachable</td><td>Status=Unreachable</td></tr>
+  <tr><td>16</td><td>Scan 10 domains</td><td>Under 5 seconds</td></tr>
+  <tr><td>17</td><td>Error rate</td><td>Below 2%</td></tr>
+</table>
+
+<h2>5. Schedule</h2>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Expected</th></tr>
+  <tr><td>18</td><td>Interval schedule</td><td>Next time displayed</td></tr>
+  <tr><td>19</td><td>Daily schedule</td><td>Tomorrow at set time</td></tr>
+  <tr><td>20</td><td>Stop schedule</td><td>Shows "—"</td></tr>
+</table>
+
+<h2>6. Health</h2>
+<table>
+  <tr><th>#</th><th>Scenario</th><th>Expected</th></tr>
+  <tr><td>21</td><td>GET /health</td><td>{"status":"healthy"}</td></tr>
+</table>
+</body>
+</html>

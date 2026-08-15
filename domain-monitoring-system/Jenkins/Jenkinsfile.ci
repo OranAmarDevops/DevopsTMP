@@ -1,0 +1,110 @@
+pipeline {
+    agent { label 'docker' }
+
+    options {
+        skipDefaultCheckout(true)
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        PROJECT_DIR = 'domain-monitoring-system'
+        APP_IMAGE = "domain-monitoring-app:${BUILD_NUMBER}"
+        SELENIUM_IMAGE = "domain-monitoring-selenium:${BUILD_NUMBER}"
+        APP_CONTAINER = "dms-app-${BUILD_NUMBER}"
+        SELENIUM_CONTAINER = "dms-selenium-${BUILD_NUMBER}"
+        CI_NETWORK = "dms-ci-${BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('Clean Workspace') {
+            steps {
+                deleteDir()
+            }
+        }
+
+        stage('Git Clone') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                dir("${PROJECT_DIR}") {
+                    sh '''
+                        docker build --pull -t "$APP_IMAGE" .
+                        docker build -f tests/Dockerfile.selenium -t "$SELENIUM_IMAGE" .
+                    '''
+                }
+            }
+        }
+
+        stage('Docker Run') {
+            steps {
+                withCredentials([
+                    string(
+                        credentialsId: 'dms-secret-key',
+                        variable: 'SECRET_KEY'
+                    )
+                ]) {
+                    sh '''
+                        docker network create "$CI_NETWORK"
+
+                        docker run -d \
+                            --name "$APP_CONTAINER" \
+                            --network "$CI_NETWORK" \
+                            --network-alias monitoring-app \
+                            --env SECRET_KEY \
+                            "$APP_IMAGE"
+
+                        healthy=false
+                        for attempt in $(seq 1 15); do
+                            if docker exec "$APP_CONTAINER" python -c "import json, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)); assert data['status'] == 'healthy'"; then
+                                healthy=true
+                                break
+                            fi
+                            sleep 2
+                        done
+
+                        if [ "$healthy" != "true" ]; then
+                            docker logs "$APP_CONTAINER"
+                            exit 1
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                sh '''
+                    docker run \
+                        --name "$SELENIUM_CONTAINER" \
+                        --network "$CI_NETWORK" \
+                        "$SELENIUM_IMAGE"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            sh '''
+                docker logs "$APP_CONTAINER" 2>/dev/null || true
+                docker rm -f "$SELENIUM_CONTAINER" >/dev/null 2>&1 || true
+                docker rm -f "$APP_CONTAINER" >/dev/null 2>&1 || true
+                docker network rm "$CI_NETWORK" >/dev/null 2>&1 || true
+                docker image rm "$SELENIUM_IMAGE" "$APP_IMAGE" >/dev/null 2>&1 || true
+            '''
+            deleteDir()
+        }
+        success {
+            echo 'The monitoring application and headless Selenium tests passed.'
+        }
+        failure {
+            echo 'The pipeline failed. Review the failed stage and container logs.'
+        }
+    }
+}

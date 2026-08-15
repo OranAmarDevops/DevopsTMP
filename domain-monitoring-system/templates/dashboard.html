@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+  <a href="/logout"><button type="button">Logout</button></a>
+</div>
+
+<div style="display:flex; gap:24px; margin-bottom:24px; flex-wrap:wrap;">
+
+  <div style="padding:16px; border:1px solid #1e2a3c; border-radius:8px; flex:1; min-width:200px;">
+    <h3>Add Domains</h3>
+    <div style="margin-bottom:10px;">
+      <input type="text" id="domainInput" placeholder="Enter domain">
+      <button id="addBtn">Add</button>
+    </div>
+    <form id="uploadForm" style="display:flex; gap:8px; align-items:center;">
+      <input type="file" id="fileInput" accept=".txt">
+      <button type="submit">Bulk Upload</button>
+    </form>
+  </div>
+
+  <div style="padding:16px; border:1px solid #1e2a3c; border-radius:8px; flex:2; min-width:300px;">
+    <h3>Schedule Checks</h3>
+    <div style="margin-bottom:8px;">
+      <label><input type="radio" name="scheduleType" value="interval" checked> Run every
+        <input type="number" id="intervalHours" min="1" value="1" style="width:60px;"> hour(s)
+      </label>
+    </div>
+    <div style="margin-bottom:8px;">
+      <label><input type="radio" name="scheduleType" value="daily"> Run once daily at
+        <input type="time" id="dailyTime" value="08:00">
+      </label>
+    </div>
+    <div id="nextCheck" style="margin-bottom:8px; color:#4a90d9;">Next check: —</div>
+    <button id="startScheduleBtn">Start Schedule</button>
+    <button id="stopScheduleBtn">Stop Schedule</button>
+  </div>
+
+</div>
+
+<div style="display:flex; gap:16px;">
+
+  <div style="display:flex; flex-direction:column; gap:8px; padding-top:4px;">
+    <button id="scanBtn">Scan All</button>
+    <button id="removeAllBtn">Remove All</button>
+  </div>
+
+  <table style="flex:1;">
+    <tr>
+      <th>Domain</th>
+      <th>Status</th>
+      <th>SSL Expiration</th>
+      <th>SSL Issuer</th>
+      <th>Action</th>
+    </tr>
+    {% for domain in domains %}
+    <tr>
+      <td>{{ domain.domain }}</td>
+      <td>{{ domain.status }}</td>
+      <td>{{ domain.ssl_expiration }}</td>
+      <td>{{ domain.ssl_issuer }}</td>
+      <td>
+        <button class="removeBtn" data-domain="{{ domain.domain }}">🗑️</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+</div>
+
+<div id="result" style="margin-top:12px;"></div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+{% endblock %}

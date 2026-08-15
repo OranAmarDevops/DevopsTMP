@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    CHROME_BIN=/usr/bin/chromium \
+    CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    SELENIUM_HEADLESS=true
+
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        chromium \
+        chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tests/requirements-selenium.txt /tmp/requirements-selenium.txt
+
+RUN pip install --no-cache-dir \
+    -r /tmp/requirements-selenium.txt
+
+COPY config.json settings.py ./
+COPY tests/test_selenium.py tests/test_selenium.py
+
+CMD ["python", "-m", "pytest", "tests/test_selenium.py", "-v", "--tb=short"]

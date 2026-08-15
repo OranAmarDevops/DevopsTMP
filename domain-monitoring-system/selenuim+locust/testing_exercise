@@ -1,0 +1,3 @@
+1. Use a combination of locust and Selenium to cover the functional and performance testing that make sure the system is functional according to the PRD.
+
+2. Ensure you are using a proper logger to write everything to stdout and a log file.

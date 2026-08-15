@@ -1,0 +1,103 @@
+pipeline {
+    agent { label 'docker' }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        booleanParam(name: 'PUSH_TO_DOCKER_HUB', defaultValue: false, description: 'Push the tested image as latest')
+        string(name: 'HOST_PORT', defaultValue: '5000', description: 'Host port used by the deployed container')
+    }
+
+    environment {
+        IMAGE_REPOSITORY = 'oranamar2003/domain-monitoring-system'
+        CONTAINER_NAME = 'domain-monitor-app'
+        DOCKER_CREDENTIALS_ID = 'docker'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                cleanWs()
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    env.COMMIT_ID = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    env.LOCAL_IMAGE = "${env.IMAGE_REPOSITORY}:${env.COMMIT_ID}-${env.BUILD_NUMBER}"
+                }
+                sh 'sudo docker build --pull -t "$LOCAL_IMAGE" .'
+            }
+        }
+
+        stage('Test Container') {
+            steps {
+                sh '''
+                    sudo docker rm -f "${CONTAINER_NAME}-test" 2>/dev/null || true
+                    sudo docker run -d --name "${CONTAINER_NAME}-test" "$LOCAL_IMAGE"
+
+                    healthy=false
+                    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                        if sudo docker exec "${CONTAINER_NAME}-test" python -c "import json, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)); assert data['status'] == 'healthy'"; then
+                            healthy=true
+                            break
+                        fi
+                        sleep 2
+                    done
+
+                    if [ "$healthy" != "true" ]; then
+                        sudo docker logs "${CONTAINER_NAME}-test"
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Publish latest') {
+            when {
+                expression { params.PUSH_TO_DOCKER_HUB }
+            }
+            steps {
+                withCredentials([usernamePassword(credentialsId: env.DOCKER_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | sudo docker login -u "$DOCKER_USER" --password-stdin
+                        sudo docker tag "$LOCAL_IMAGE" "${IMAGE_REPOSITORY}:latest"
+                        sudo docker push "${IMAGE_REPOSITORY}:latest"
+                        sudo docker logout
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    sudo docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+                    sudo docker run -d \
+                        --name "$CONTAINER_NAME" \
+                        --restart unless-stopped \
+                        -p "${HOST_PORT}:5000" \
+                        "$LOCAL_IMAGE"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'sudo docker rm -f "${CONTAINER_NAME}-test" 2>/dev/null || true'
+        }
+        success {
+            echo "Domain Monitoring System is running on port ${params.HOST_PORT}."
+        }
+        failure {
+            echo 'Pipeline failed. Review the build and container logs above.'
+        }
+    }
+}

@@ -1,0 +1,16 @@
+
+o  Write a detailed list of your technical debt and potential improvements.
+
+o  Go over your code base and ensure the following is true:
+      - You have solid logging in place
+      - Your application has an external configuration file and no configuration remains as part of the app source code
+
+o  Break your system into two microservices:
+      - FE (flask with just the front end pieces)
+      - BE (the core logic)
+      FE should communicate with the BE using API calls
+
+      - As a team, decide if you want to have mono repo or separate repositories.
+
+o  Ensure your fe and be are containerized and working.
+   Dockerfiles and docker hub repos are in place

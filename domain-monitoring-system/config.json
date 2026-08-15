@@ -1,0 +1,26 @@
+{
+  "app": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false,
+    "session_lifetime_minutes": 30
+  },
+  "storage": {
+    "data_dir": "data",
+    "users_file": "data/users.json",
+    "log_dir": "logs"
+  },
+  "monitoring": {
+    "thread_pool_size": 10,
+    "urls_limit": 100,
+    "request_timeout_seconds": 5,
+    "time_limit_seconds": 5,
+    "error_limit_percent": 2
+  },
+  "selenium": {
+    "base_url": "http://monitoring-app:5000",
+    "wait_timeout_seconds": 10,
+    "headless": true,
+    "implicit_wait_seconds": 5
+  }
+}

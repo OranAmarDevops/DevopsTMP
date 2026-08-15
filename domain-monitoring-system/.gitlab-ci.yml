@@ -1,0 +1,45 @@
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  IMAGE_NAME: oranamar2003/domain-monitoring-system
+  IMAGE_TAG: latest
+  APP_PORT: "5000"
+
+build:
+  stage: build
+  script:
+    - echo "Building Docker image..."
+    - docker build -t $IMAGE_NAME:$IMAGE_TAG .
+  only:
+    - main
+    - master
+
+test:
+  stage: test
+  script:
+    - echo "Starting container for health check..."
+    - docker run -d --name dms-test -p $APP_PORT:$APP_PORT $IMAGE_NAME:$IMAGE_TAG
+    - sleep 3
+    - echo "Running health check..."
+    - curl -f http://localhost:$APP_PORT/health
+    - echo "Health check passed!"
+  after_script:
+    - docker stop dms-test || true
+    - docker rm dms-test || true
+  only:
+    - main
+    - master
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Pushing image to registry..."
+    - docker tag $IMAGE_NAME:$IMAGE_TAG $CI_REGISTRY_IMAGE:$IMAGE_TAG
+    - docker push $CI_REGISTRY_IMAGE:$IMAGE_TAG
+    - echo "Deploy complete."
+  only:
+    - main
+    - master

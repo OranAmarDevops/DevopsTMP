@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Login</h2>
+<form id="loginForm">
+  <input type="text" id="userInput" placeholder="Username" required>
+  <small id="userError" style="color:#e05c5c; display:none;"></small>
+
+  <div class="password-wrapper">
+    <input type="password" id="passwordInput" placeholder="Password" required style="padding-right:60px;">
+    <label for="showPwd" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); cursor:pointer; color:#4a90d9; font-size:13px; user-select:none;">Show</label>
+    <input type="checkbox" id="showPwd" style="display:none;" onchange="const p=document.getElementById('passwordInput'); p.type=this.checked?'text':'password'; this.previousElementSibling.textContent=this.checked?'Hide':'Show';">
+  </div>
+  <small id="passwordError" style="color:#e05c5c; display:none;"></small>
+
+  <label style="font-size:13px; display:flex; align-items:center; gap:6px;">
+    <input type="checkbox" id="rememberMe"> Remember me
+  </label>
+
+  <button type="submit" id="submitBtn">Login</button>
+</form>
+
+<p style="text-align:center; margin-top:12px;">
+  Don't have an account? <a href="/register" style="color:#4a90d9;">Register</a>
+</p>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% endblock %}

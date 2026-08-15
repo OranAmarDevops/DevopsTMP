@@ -1,0 +1,189 @@
+Low-Level Design (LLD)
+Project Title: Domain Monitoring System
+
+1. Detailed Component Design
+User Management Module
+Registration:
+Endpoint: /register
+Method: POST
+Data Flow:
+User submits username and password.
+Flask handles validation to ensure the username is unique.
+User details are stored in users.json with the following structure:
+
+{
+"username": "example_user",
+"password": "plain_text_password"
+}
+Security Considerations: Password stored in plain text initially; future updates will include encryption.
+
+Login:
+Endpoint: /login
+Method: POST
+Data Flow:
+User submits credentials.
+Flask validates the credentials against users.json.
+Upon success, a session is created using Flask's session object, allowing user access to the dashboard.
+Session Management: Flask session object is used to maintain user state across requests.
+
+Domain Management Module
+Add Domain:
+Single Domain Input:
+Endpoint: /add_domain
+Method: POST
+Input: Single domain URL (validated for URL format).
+Data Flow:
+Upon submission, the domain is stored in <username>_domains.json.
+Structure of each domain entry:
+{
+   "domain": "example.com",
+   "status": "Pending",
+   "ssl_expiration": "N/A",
+   "ssl_issuer": "N/A"
+}
+
+Bulk Domain Upload:
+Endpoint: /bulk_upload
+Method: POST
+Input: .txt file containing one domain per line.
+Data Flow:
+Flask reads the file, validating each domain entry.
+Valid domains are added to <username>_domains.json.
+
+Monitoring System:
+Liveness Check:
+Library: requests
+Process:
+HTTP GET request is sent to the domain.
+If the response status code is 200, status is set to "Live"; otherwise, it is set to "Down".
+
+SSL Check:
+Library: ssl
+Process:
+Retrieves SSL certificate information for each domain.
+Updates ssl_expiration with the expiration date and ssl_issuer with the certificate authority.
+
+2. DataStore/File Structure Design
+users.json: Stores all registered users with basic details.
+
+[
+   {
+      "username": "example_user1",
+      "password": "plain_text_password1"
+   },
+   {
+      "username": "example_user2",
+      "password": "plain_text_password2"
+   }
+]
+
+<username>_domains.json: Stores each user's monitored domains, including the monitoring status and SSL details.
+
+[
+   {
+      "domain": "example.com",
+      "status": "Live",
+      "ssl_expiration": "2025-12-31",
+      "ssl_issuer": "Example Certificate Authority"
+   }
+]
+
+3. API Contracts
+Registration Endpoint
+Endpoint: /register
+Method: POST
+Request Body:
+{
+   "username": "example_user",
+   "password": "example_password"
+}
+Response:
+Success: {"status": "Success", "message": "Registration successful"}
+Error: {"status": "Error", "message": "<error message>"}
+
+Login Endpoint
+Endpoint: /login
+Method: POST
+Request Body:
+{
+   "username": "example_user",
+   "password": "example_password"
+}
+Response:
+Success: {"status": "Success", "message": "Login successful"}
+Error: {"status": "Error", "message": "<error message>"}
+
+Add Domain Endpoint
+Endpoint: /add_domain
+Method: POST
+Request Body:
+{
+   "domain": "example.com"
+}
+Response:
+Success: {"status": "Success", "message": "Domain added successfully"}
+Error: {"status": "Error", "message": "Invalid domain format"}
+
+Bulk Upload Endpoint
+Endpoint: /bulk_upload
+Method: POST
+Request: .txt file containing domains
+Response:
+Success: {"status": "Success", "message": "Bulk upload successful"}
+Error: {"status": "Error", "message": "Invalid file format or content"}
+
+4. Data Flow Diagrams
+
+User Registration Flow:
+
+  User                    UI                        BE
+  ────                    ──                        ──
+  [User] ──────────► [Registration Form] ──────► [Validate]
+                               │                      │
+                               │                      ▼
+                      [Confirmation Message]      [DataStore]
+                               │
+                      [User] ◄─┘
+
+Domain Monitoring Flow:
+
+  User                    UI                        BE
+  ────                    ──                        ──
+  [User] ──────────► [Domain Submission] ──────► [Validate] ──────► [DME]
+                                                      │                 │
+                                                      ▼                 │
+                                             [username_domains.json] ◄──┘
+
+5. Concurrency and Multithreading
+Multithreading Design:
+Library: concurrent.futures.ThreadPoolExecutor
+Process:
+The backend creates a thread pool with a limited number of threads (based on server capabilities).
+Each thread independently performs domain checks (liveness and SSL).
+Results are stored back in the user's JSON file.
+
+6. Error Handling and Validation
+User Input Validation:
+Registration: Ensure unique username, non-empty password.
+Domain Validation: Check if domain format is valid (e.g., example.com).
+File Validation: For bulk uploads, ensure each line contains a valid domain.
+Error Messages:
+Registration errors (e.g., duplicate username).
+Login errors (e.g., incorrect password).
+Domain errors (e.g., invalid domain or file format).
+Logging:
+Record errors encountered during domain checks and API calls.
+Maintain logs for debugging concurrency issues and tracking I/O operations.
+
+7. Frontend Structure
+User Forms:
+Registration Form: Fields for username and password.
+Login Form: Fields for username and password.
+Domain Submission:
+Single domain text field and file upload for bulk domains.
+Dashboard Layout:
+Table for displaying domains, with columns for:
+Domain name
+Liveness status
+SSL expiration date
+SSL issuer
