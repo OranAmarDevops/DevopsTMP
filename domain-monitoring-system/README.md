@@ -396,7 +396,8 @@ deploy:
 ```
 domain-monitoring-system/
 ├── app.py                    # Flask application entry point
-├── config.py                 # Configuration management
+├── config.json               # External non-secret configuration
+├── settings.py               # Configuration loader
 ├── services/                 # Business logic layer
 │   ├── auth_service.py       # Authentication
 │   ├── domain_service.py     # Domain management
