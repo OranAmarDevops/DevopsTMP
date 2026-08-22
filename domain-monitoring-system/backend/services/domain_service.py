@@ -26,6 +26,10 @@ def _get_lock(username):
             _locks[username] = threading.Lock()
         return _locks[username]
 
+def get_domains(username):
+    with _get_lock(username):
+        return _load_domains(username)
+
 def _get_domains_file(username):
     return os.path.join(
         DATA_DIR,

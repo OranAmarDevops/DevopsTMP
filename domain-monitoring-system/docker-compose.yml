@@ -1,35 +1,64 @@
-version: '3.8'
-
 services:
-  app:
-    image: oranamar2003/domain-monitoring-system:latest
-    container_name: domain-monitor-app
-    ports:
-      - "5000:5000"
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+
+    image: dms-backend:test
+    container_name: dms-backend
+
+    expose:
+      - "5001"
+
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    environment:
-      - FLASK_ENV=production
-    restart: unless-stopped
+      - ./backend/data:/app/backend/data
+
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
     networks:
       - dms-network
 
-  nginx:
-    image: nginx:alpine
-    container_name: domain-monitor-nginx
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+
+    image: dms-frontend:test
+    container_name: dms-frontend
+
     ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - "5000:5000"
+
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      BACKEND_URL: http://backend:5001
+
     depends_on:
-      - app
-    restart: unless-stopped
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
     networks:
       - dms-network
 

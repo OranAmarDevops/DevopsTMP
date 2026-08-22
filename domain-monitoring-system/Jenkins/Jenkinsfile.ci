@@ -9,13 +9,18 @@ pipeline {
     }
 
     environment {
-        PROJECT_DIR = 'domain-monitoring-system'
-        APP_IMAGE = "domain-monitoring-app:${BUILD_NUMBER}"
-        SELENIUM_IMAGE = "domain-monitoring-selenium:${BUILD_NUMBER}"
-        APP_CONTAINER = "dms-app-${BUILD_NUMBER}"
-        SELENIUM_CONTAINER = "dms-selenium-${BUILD_NUMBER}"
-        CI_NETWORK = "dms-ci-${BUILD_NUMBER}"
-    }
+    PROJECT_DIR = 'domain-monitoring-system'
+
+    BACKEND_IMAGE = "domain-monitoring-backend:${BUILD_NUMBER}"
+    FRONTEND_IMAGE = "domain-monitoring-frontend:${BUILD_NUMBER}"
+    SELENIUM_IMAGE = "domain-monitoring-selenium:${BUILD_NUMBER}"
+
+    BACKEND_CONTAINER = "dms-backend-${BUILD_NUMBER}"
+    FRONTEND_CONTAINER = "dms-frontend-${BUILD_NUMBER}"
+    SELENIUM_CONTAINER = "dms-selenium-${BUILD_NUMBER}"
+
+    CI_NETWORK = "dms-ci-${BUILD_NUMBER}"
+}
 
     stages {
         stage('Clean Workspace') {
@@ -31,51 +36,92 @@ pipeline {
         }
 
         stage('Docker Build') {
-            steps {
-                dir("${PROJECT_DIR}") {
-                    sh '''
-                        docker build --pull -t "$APP_IMAGE" .
-                        docker build -f tests/Dockerfile.selenium -t "$SELENIUM_IMAGE" .
-                    '''
-                }
-            }
+    steps {
+        dir("${PROJECT_DIR}") {
+            sh '''
+                docker build --pull \
+                    -f backend/Dockerfile \
+                    -t "$BACKEND_IMAGE" \
+                    .
+
+                docker build --pull \
+                    -f frontend/Dockerfile \
+                    -t "$FRONTEND_IMAGE" \
+                    .
+
+                docker build \
+                    -f tests/Dockerfile.selenium \
+                    -t "$SELENIUM_IMAGE" \
+                    .
+            '''
         }
+    }
+}
 
         stage('Docker Run') {
-            steps {
-                withCredentials([
-                    string(
-                        credentialsId: 'dms-secret-key',
-                        variable: 'SECRET_KEY'
-                    )
-                ]) {
-                    sh '''
-                        docker network create "$CI_NETWORK"
+    steps {
+        withCredentials([
+            string(
+                credentialsId: 'dms-secret-key',
+                variable: 'SECRET_KEY'
+            )
+        ]) {
+            sh '''
+                docker network create "$CI_NETWORK"
 
-                        docker run -d \
-                            --name "$APP_CONTAINER" \
-                            --network "$CI_NETWORK" \
-                            --network-alias monitoring-app \
-                            --env SECRET_KEY \
-                            "$APP_IMAGE"
+                docker run -d \
+                    --name "$BACKEND_CONTAINER" \
+                    --network "$CI_NETWORK" \
+                    --network-alias backend \
+                    "$BACKEND_IMAGE"
 
-                        healthy=false
-                        for attempt in $(seq 1 15); do
-                            if docker exec "$APP_CONTAINER" python -c "import json, urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)); assert data['status'] == 'healthy'"; then
-                                healthy=true
-                                break
-                            fi
-                            sleep 2
-                        done
+                backend_healthy=false
 
-                        if [ "$healthy" != "true" ]; then
-                            docker logs "$APP_CONTAINER"
-                            exit 1
-                        fi
-                    '''
-                }
-            }
+                for attempt in $(seq 1 15); do
+                    if docker exec "$BACKEND_CONTAINER" \
+                        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)"; then
+                        backend_healthy=true
+                        break
+                    fi
+
+                    sleep 2
+                done
+
+                if [ "$backend_healthy" != "true" ]; then
+                    echo "Backend health check failed"
+                    docker logs "$BACKEND_CONTAINER"
+                    exit 1
+                fi
+
+                docker run -d \
+                    --name "$FRONTEND_CONTAINER" \
+                    --network "$CI_NETWORK" \
+                    --network-alias monitoring-app \
+                    --env SECRET_KEY \
+                    --env BACKEND_URL=http://backend:5001 \
+                    "$FRONTEND_IMAGE"
+
+                frontend_healthy=false
+
+                for attempt in $(seq 1 15); do
+                    if docker exec "$FRONTEND_CONTAINER" \
+                        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"; then
+                        frontend_healthy=true
+                        break
+                    fi
+
+                    sleep 2
+                done
+
+                if [ "$frontend_healthy" != "true" ]; then
+                    echo "Frontend health check failed"
+                    docker logs "$FRONTEND_CONTAINER"
+                    exit 1
+                fi
+            '''
         }
+    }
+}
 
         stage('Test') {
             steps {
@@ -90,21 +136,40 @@ pipeline {
     }
 
     post {
-        always {
-            sh '''
-                docker logs "$APP_CONTAINER" 2>/dev/null || true
-                docker rm -f "$SELENIUM_CONTAINER" >/dev/null 2>&1 || true
-                docker rm -f "$APP_CONTAINER" >/dev/null 2>&1 || true
-                docker network rm "$CI_NETWORK" >/dev/null 2>&1 || true
-                docker image rm "$SELENIUM_IMAGE" "$APP_IMAGE" >/dev/null 2>&1 || true
-            '''
-            deleteDir()
-        }
-        success {
-            echo 'The monitoring application and headless Selenium tests passed.'
-        }
-        failure {
-            echo 'The pipeline failed. Review the failed stage and container logs.'
-        }
+    always {
+        sh '''
+            echo "Backend logs:"
+            docker logs "$BACKEND_CONTAINER" 2>/dev/null || true
+
+            echo "Frontend logs:"
+            docker logs "$FRONTEND_CONTAINER" 2>/dev/null || true
+
+            docker rm -f \
+                "$SELENIUM_CONTAINER" \
+                "$FRONTEND_CONTAINER" \
+                "$BACKEND_CONTAINER" \
+                >/dev/null 2>&1 || true
+
+            docker network rm \
+                "$CI_NETWORK" \
+                >/dev/null 2>&1 || true
+
+            docker image rm \
+                "$SELENIUM_IMAGE" \
+                "$FRONTEND_IMAGE" \
+                "$BACKEND_IMAGE" \
+                >/dev/null 2>&1 || true
+        '''
+
+        deleteDir()
     }
+
+    success {
+        echo 'Backend, frontend and headless Selenium tests passed.'
+    }
+
+    failure {
+        echo 'Pipeline failed. Review the failed stage and container logs.'
+    }
+}
 }

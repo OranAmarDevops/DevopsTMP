@@ -4,7 +4,7 @@ import time
 import logging
 import requests
 from concurrent.futures import ThreadPoolExecutor
-from services import domain_service
+from . import domain_service
 import threading
 from settings import load_settings
 

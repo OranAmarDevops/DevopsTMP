@@ -1,525 +1,279 @@
-# 🌐 Domain Monitoring System
+# Domain Monitoring System
 
-> **DevOps Portfolio Project** - Full-stack web application for monitoring domain liveness and SSL certificates with comprehensive testing suite.
+A Flask application for monitoring domain availability and SSL certificate information. The project began as a monolith and was later split into two independently containerized services:
 
-![Python](https://img.shields.io/badge/python-3.11-blue.svg)
-![Flask](https://img.shields.io/badge/flask-3.0-green.svg)
-![Tests](https://img.shields.io/badge/tests-40%2F40%20passed-brightgreen.svg)
-![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
+- **Frontend** — owns the web interface, browser session and communication with the backend.
+- **Backend** — owns authentication, domain storage, monitoring and scheduled scans.
 
-**🐳 Docker Hub:** [oranamar2003/domain-monitoring-system](https://hub.docker.com/r/oranamar2003/domain-monitoring-system)
+The project demonstrates Docker networking, external configuration, containerized Selenium testing and a Jenkins pipeline running on a Docker agent.
 
----
+## Architecture
 
-## 📋 Table of Contents
-
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Quick Start](#-quick-start)
-  - [Docker (Recommended)](#docker-recommended)
-  - [Local Development](#local-development)
-  - [Docker Compose](#docker-compose-production)
-- [Testing](#-testing)
-- [Docker Guide](#-docker-guide)
-- [CI/CD](#-cicd)
-- [Architecture](#-architecture)
-- [GitLab Upload](#-gitlab-upload)
-- [Documentation](#-documentation)
-
----
-
-## ✨ Features
-
-### Core Functionality
-- ✅ **User Management** - Registration, login, session handling
-- ✅ **Domain Monitoring** - Track multiple domains with liveness checks
-- ✅ **SSL Certificate Validation** - Monitor certificate expiration
-- ✅ **Bulk Operations** - Add/remove domains in batch
-- ✅ **Scheduled Scans** - Automatic monitoring at intervals
-- ✅ **Concurrent Processing** - ThreadPoolExecutor for performance
-
-### DevOps Capabilities
-- 🐳 **Docker** - Containerized deployment
-- 🔄 **CI/CD** - GitLab CI pipeline with automated testing
-- 📊 **Comprehensive Testing** - Unit, Integration, UI, Performance
-- 📝 **Logging** - Structured logging for debugging
-- 🚀 **Production Ready** - nginx, docker-compose configuration
-
----
-
-## 🛠️ Tech Stack
-
-### Backend
-- **Python 3.11** - Core language
-- **Flask 3.0** - Web framework
-- **APScheduler** - Background job scheduling
-
-### Frontend
-- **HTML5/CSS3** - Responsive UI
-- **JavaScript (ES6)** - Dynamic interactions
-- **Fetch API** - Async communication
-
-### Testing
-- **pytest** - Unit testing (7/7 passed)
-- **Selenium** - UI testing (8/8 passed)
-- **Locust** - Performance testing (25 requests, 0% failures)
-
-### DevOps
-- **Docker** - Containerization
-- **docker-compose** - Multi-container orchestration
-- **GitLab CI** - Automated pipelines
-- **nginx** - Reverse proxy
-
----
-
-## 🚀 Quick Start
-
-### Docker (Recommended)
-
-Pull and run the pre-built image from Docker Hub:
-
-```bash
-# Pull the image
-docker pull oranamar2003/domain-monitoring-system:latest
-
-# Run the container
-docker run -d -p 5000:5000 --name domain-monitor oranamar2003/domain-monitoring-system:latest
-
-# Open browser
-http://localhost:5000
+```text
+Browser
+   |
+   v
+Frontend service :5000
+   |
+   | HTTP/JSON through backend_client.py
+   v
+Backend service :5001
+   |
+   +-- Authentication service
+   +-- Domain service
+   +-- Monitoring service
+   +-- APScheduler
+   |
+   v
+JSON file storage
 ```
 
-**With persistent data:**
-```bash
-docker run -d -p 5000:5000 \
-  -v $(pwd)/data:/app/data \
-  --name domain-monitor \
-  oranamar2003/domain-monitoring-system:latest
+Only the frontend is published to the host. The backend remains inside the Docker network and is reached by its service name:
+
+```text
+http://backend:5001
 ```
 
-**Common commands:**
-```bash
-# View logs
-docker logs domain-monitor
-
-# Stop container
-docker stop domain-monitor
-
-# Start again
-docker start domain-monitor
-
-# Remove container
-docker rm domain-monitor
-```
-
----
-
-### Local Development
-
-```bash
-# 1. Clone the repository
-git clone <your-repo-url>
-cd domain-monitoring-system
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Run the application
-python app.py
-
-# 4. Open browser
-http://localhost:5000
-```
-
----
-
-### Docker Compose (Production)
-
-For production setup with nginx reverse proxy:
-
-```bash
-# Start all services
-docker-compose up -d
-
-# Check status
-docker-compose ps
-
-# View logs
-docker-compose logs -f
-
-# Stop all services
-docker-compose down
-```
-
-**docker-compose.yml:**
-```yaml
-version: '3.8'
-
-services:
-  app:
-    image: oranamar2003/domain-monitoring-system:latest
-    container_name: domain-monitor-app
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    environment:
-      - FLASK_ENV=production
-    restart: unless-stopped
-    networks:
-      - dms-network
-
-  nginx:
-    image: nginx:alpine
-    container_name: domain-monitor-nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - app
-    restart: unless-stopped
-    networks:
-      - dms-network
-
-networks:
-  dms-network:
-    driver: bridge
-```
-
----
-
-## 🧪 Testing
-
-**Test Coverage: 100% ✅**
-
-### Prerequisites
-```bash
-pip install -r requirements.txt
-```
-
-### Run All Tests
-
-```bash
-# 1. Start Flask app (terminal 1)
-python app.py
-
-# 2. Run tests (terminal 2)
-# Unit tests
-python -m pytest tests/test_app.py -v
-
-# Selenium UI tests
-python -m pytest tests/test_selenium.py -v
-
-# Locust performance tests
-python -m locust -f tests/locustfile.py --host=http://localhost:5000 --users 5 --spawn-rate 1 --run-time 20s --headless
-```
-
-### One-liner (PowerShell)
-```powershell
-python app.py & Start-Sleep 5; python -m pytest tests/test_app.py -v; python -m pytest tests/test_selenium.py -v; python -m locust -f tests/locustfile.py --host=http://localhost:5000 --users 5 --spawn-rate 1 --run-time 20s --headless
-```
-
-### Test Results Summary
-
-| Test Type | Status | Coverage |
-|-----------|--------|----------|
-| **Unit Tests** | ✅ 7/7 passed | Backend logic |
-| **Selenium Tests** | ✅ 8/8 passed | UI workflows |
-| **Locust Tests** | ✅ 25/25 successful | Performance |
-
-**Detailed results:** See [TEST_RESULTS_SUMMARY.md](TEST_RESULTS_SUMMARY.md)
-
----
-
-## 🐳 Docker Guide
-
-### Building Your Own Image
-
-```bash
-# Build the image
-docker build -t oranamar2003/domain-monitoring-system:latest .
-
-# Run locally
-docker run -d -p 5000:5000 oranamar2003/domain-monitoring-system:latest
-```
-
-### Push to Docker Hub
-
-```bash
-# Login
-docker login
-
-# Push
-docker push oranamar2003/domain-monitoring-system:latest
-
-# Tag with version
-docker tag oranamar2003/domain-monitoring-system:latest oranamar2003/domain-monitoring-system:v1.0
-docker push oranamar2003/domain-monitoring-system:v1.0
-```
-
-### Advanced Configuration
-
-**Custom port:**
-```bash
-docker run -d -p 8080:5000 --name domain-monitor oranamar2003/domain-monitoring-system:latest
-```
-
-**Environment variables:**
-```bash
-docker run -d -p 5000:5000 \
-  -e FLASK_ENV=development \
-  -e LOG_LEVEL=DEBUG \
-  --name domain-monitor \
-  oranamar2003/domain-monitoring-system:latest
-```
-
-**Resource limits:**
-```bash
-docker run -d -p 5000:5000 \
-  --memory="256m" \
-  --cpus="0.5" \
-  --name domain-monitor \
-  oranamar2003/domain-monitoring-system:latest
-```
-
-### Troubleshooting
-
-**Port already in use:**
-```bash
-docker run -d -p 8080:5000 --name domain-monitor oranamar2003/domain-monitoring-system:latest
-```
-
-**Check logs:**
-```bash
-docker logs domain-monitor
-```
-
-**Container exits immediately:**
-```bash
-docker logs domain-monitor  # Check for errors
-docker inspect domain-monitor  # Check configuration
-```
-
----
-
-## 🔄 CI/CD
-
-Automated GitLab CI pipeline with 3 stages:
-
-```yaml
-Stages:
-  1. Build   → Docker image creation
-  2. Test    → Unit + Selenium + Locust
-  3. Deploy  → Push to registry (manual)
-```
-
-**.gitlab-ci.yml:**
-```yaml
-stages:
-  - build
-  - test
-  - deploy
-
-variables:
-  IMAGE_NAME: oranamar2003/domain-monitoring-system
-  IMAGE_TAG: latest
-
-build:
-  stage: build
-  script:
-    - docker build -t $IMAGE_NAME:$IMAGE_TAG .
-
-test:
-  stage: test
-  script:
-    - docker run -d --name dms-test -p 5000:5000 $IMAGE_NAME:$IMAGE_TAG
-    - sleep 3
-    - curl -f http://localhost:5000/health
-  after_script:
-    - docker stop dms-test || true
-    - docker rm dms-test || true
-
-deploy:
-  stage: deploy
-  script:
-    - docker push $IMAGE_NAME:$IMAGE_TAG
-  when: manual
-```
-
-**Pipeline Status:** ✅ All checks passing
-
----
-
-## 🏗️ Architecture
-
-### System Components
-
-```
-┌─────────────────────────────────────────────────────┐
-│                     nginx (Port 80)                 │
-│              (Reverse Proxy + Load Balancer)        │
-└────────────────────┬────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│              Flask App (Port 5000)                  │
-│  ┌───────────────────────────────────────────────┐  │
-│  │  Routes: /register, /login, /dashboard, ...  │  │
-│  └───────────────────────────────────────────────┘  │
-│                                                     │
-│  ┌───────────────────────────────────────────────┐  │
-│  │  Services Layer:                              │  │
-│  │  • auth_service.py      (Authentication)      │  │
-│  │  • domain_service.py    (Domain Management)   │  │
-│  │  • monitoring_service.py (Scanning)           │  │
-│  └───────────────────────────────────────────────┘  │
-│                                                     │
-│  ┌───────────────────────────────────────────────┐  │
-│  │  APScheduler (Background Jobs)                │  │
-│  │  • Interval Scans                             │  │
-│  │  • Daily Scans                                │  │
-│  └───────────────────────────────────────────────┘  │
-└────────────────────┬────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────┐
-│           JSON File Storage (data/)                 │
-│  • users.json       (User accounts)                 │
-│  • {username}_domains.json  (User domains)          │
-└─────────────────────────────────────────────────────┘
-```
-
-### Project Structure
-
-```
+## Features
+
+- User registration, login and frontend session handling
+- Add, remove and bulk-upload domains
+- Concurrent domain availability checks
+- SSL expiration and issuer collection
+- Scan one domain or all domains
+- Interval and daily scheduled scans
+- External JSON configuration
+- Separate frontend and backend Docker images
+- Headless Selenium tests in a dedicated container
+- Jenkins stages for checkout, build, run, test and cleanup
+
+## Technology
+
+- Python 3.11
+- Flask
+- Requests
+- APScheduler
+- HTML, CSS and JavaScript
+- Docker and Docker Compose
+- Selenium and pytest
+- Jenkins Declarative Pipeline
+
+## Project structure
+
+```text
 domain-monitoring-system/
-├── app.py                    # Flask application entry point
-├── config.json               # External non-secret configuration
-├── settings.py               # Configuration loader
-├── services/                 # Business logic layer
-│   ├── auth_service.py       # Authentication
-│   ├── domain_service.py     # Domain management
-│   └── monitoring_service.py # Scanning logic
-├── templates/                # Jinja2 templates
-├── static/                   # CSS/JS/Images
-├── tests/                    # Test suite
-│   ├── test_app.py          # Unit tests
-│   ├── test_selenium.py     # UI tests
-│   └── locustfile.py        # Performance tests
-├── Dockerfile               # Container definition
-├── docker-compose.yml       # Multi-container setup
-└── .gitlab-ci.yml          # CI/CD pipeline
+|-- backend/
+|   |-- app.py
+|   |-- Dockerfile
+|   |-- requirements.txt
+|   |-- services/
+|   |   |-- auth_service.py
+|   |   |-- domain_service.py
+|   |   |-- monitoring_service.py
+|   |   `-- utils.py
+|   `-- data/                  # Runtime JSON files; ignored by Git
+|-- frontend/
+|   |-- app.py
+|   |-- backend_client.py
+|   |-- Dockerfile
+|   |-- requirements.txt
+|   |-- templates/
+|   `-- static/
+|-- tests/
+|   |-- Dockerfile.selenium
+|   |-- requirements-selenium.txt
+|   `-- test_selenium.py
+|-- Jenkins/
+|   `-- Jenkinsfile.ci
+|-- Docs/
+|-- config.json
+|-- settings.py
+|-- docker-compose.yml
+|-- .dockerignore
+`-- .gitignore
 ```
 
----
+## Configuration
 
-## 📤 GitLab Upload
+Non-secret settings are stored in `config.json` and loaded by `settings.py`.
 
-### Quick Upload
+| Variable | Service | Purpose |
+|---|---|---|
+| `SECRET_KEY` | Frontend | Signs the Flask session cookie; required at startup |
+| `BACKEND_URL` | Frontend | Overrides the configured backend address |
+| `APP_CONFIG_FILE` | Both | Optional path to another JSON configuration file |
+| `BASE_URL` | Selenium | Overrides the UI address used by Selenium |
 
-```bash
-cd domain-monitoring-system
+Secrets are supplied at runtime and are not stored in the Dockerfiles or `config.json`.
 
-# Initialize git
-git init
-git add .
-git commit -m "Initial commit: Domain Monitoring System with 100% test coverage"
+## Run locally without Docker
 
-# Add GitLab remote (replace with your URL)
-git remote add origin https://gitlab.com/YOUR_USERNAME/domain-monitoring-system.git
+Use two PowerShell terminals from the project directory.
 
-# Push to GitLab
-git branch -M main
-git push -u origin main
+Install the dependencies:
+
+```powershell
+python -m pip install -r backend/requirements.txt
+python -m pip install -r frontend/requirements.txt
 ```
 
-### Create GitLab Project
+Start the backend in the first terminal:
 
-1. Go to https://gitlab.com
-2. Click **"New Project"** → **"Create blank project"**
-3. Settings:
-   - **Project name:** domain-monitoring-system
-   - **Visibility:** Public (or Private)
-   - **Initialize with README:** NO (you have one!)
-4. Click **"Create project"**
-
-### Project Settings
-
-**Description:**
-```
-Full-stack domain monitoring system with Flask, Docker, CI/CD, and comprehensive testing suite (40/40 tests passed)
+```powershell
+python -m backend.app
 ```
 
-**Topics:**
-```
-python, flask, devops, docker, ci-cd, selenium, testing, gitlab-ci, monitoring
-```
+Start the frontend in the second terminal:
 
-### Verify Upload
-
-After pushing, check:
-- ✅ README.md displays correctly
-- ✅ All files are present
-- ✅ .gitlab-ci.yml exists
-- ✅ Pipeline runs automatically
-
----
-
-## 📚 Documentation
-
-- **[README.md](README.md)** - This file (main documentation)
-- **[TEST_RESULTS_SUMMARY.md](TEST_RESULTS_SUMMARY.md)** - Detailed test results
-- **[QUICK_TEST_GUIDE.md](QUICK_TEST_GUIDE.md)** - Testing instructions
-- **[SWARM-SOP.md](SWARM-SOP.md)** - Team workflow procedures
-- **[GITLAB_UPLOAD_GUIDE.md](GITLAB_UPLOAD_GUIDE.md)** - Git upload instructions
-- **[Docs/PRD](Docs/Product%20Requirements%20Document%20(PRD))** - Product requirements
-- **[Docs/HLD](Docs/High-Level%20Design%20(HLD))** - High-level design
-- **[Docs/LLD](Docs/Low-Level%20Design%20(LLD))** - Low-level design
-
----
-
-## 🔍 Health Check
-
-```bash
-curl http://localhost:5000/health
+```powershell
+$env:SECRET_KEY = "local-development-secret"
+$env:BACKEND_URL = "http://127.0.0.1:5001"
+python -m frontend.app
 ```
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2026-08-15T12:00:00.000000"
-}
+Open `http://127.0.0.1:5000`.
+
+## Run with Docker Compose
+
+```powershell
+$env:SECRET_KEY = "local-compose-secret"
+docker compose up -d --build
+docker compose ps
 ```
 
----
+Open `http://127.0.0.1:5000`.
 
-## 🌟 Highlights for DevOps Portfolio
+View logs:
 
-✅ **Full DevOps Lifecycle** - From PRD → Design → Development → Testing → CI/CD  
-✅ **Production-Ready** - Docker, nginx, automated testing  
-✅ **100% Test Coverage** - 40/40 tests passing  
-✅ **Professional Documentation** - Comprehensive guides and design docs  
-✅ **Modern Stack** - Python 3.11, Flask 3.0, Docker, GitLab CI  
-✅ **Public Docker Image** - Available on Docker Hub  
+```powershell
+docker compose logs -f
+```
 
----
+Stop the services without deleting application data:
 
-## 📞 Support & Links
+```powershell
+docker compose down
+```
 
-- **Docker Hub:** https://hub.docker.com/r/oranamar2003/domain-monitoring-system
-- **GitLab Repository:** [Your GitLab URL]
-- **Test Results:** See TEST_RESULTS_SUMMARY.md
-- **Testing Guide:** See QUICK_TEST_GUIDE.md
+The backend JSON data is mounted from `./backend/data` and is ignored by Git and Docker builds.
 
----
+## Build the images separately
 
-## 📄 License
+```powershell
+docker build -f backend/Dockerfile -t dms-backend:test .
+docker build -f frontend/Dockerfile -t dms-frontend:test .
+docker build -f tests/Dockerfile.selenium -t dms-selenium:test .
+```
 
-This is a portfolio/educational project - August 2026
+## Health checks
 
----
+Frontend health check from the host:
 
-**⭐ Star this repository if you find it helpful!**
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/health
+```
+
+Backend health check from its container:
+
+```powershell
+docker compose exec backend python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5001/health').read().decode())"
+```
+
+Expected responses identify the service and return a `healthy` status.
+
+## Selenium tests
+
+The tests run in headless Chromium inside a dedicated image. In Jenkins, the frontend receives the network alias `monitoring-app`, matching the default Selenium URL in `config.json`.
+
+For a local Compose run:
+
+```powershell
+$env:SECRET_KEY = "local-compose-secret"
+docker compose up -d --build
+docker build -f tests/Dockerfile.selenium -t dms-selenium:test .
+docker run --rm --network domain-monitoring-system_dms-network -e BASE_URL=http://frontend:5000 dms-selenium:test
+```
+
+The suite covers registration, login, validation, domain management and the health endpoint.
+
+## Jenkins pipeline
+
+The CI pipeline is defined in `Jenkins/Jenkinsfile.ci`. When Jenkins checks out the parent repository, use this Script Path:
+
+```text
+domain-monitoring-system/Jenkins/Jenkinsfile.ci
+```
+
+Jenkins agent requirements:
+
+- Node label: `docker`
+- Docker CLI access
+- Git
+- Jenkins secret-text credential ID: `dms-secret-key`
+- Pipeline and Stage View plugins
+
+Pipeline flow:
+
+```text
+Clean Workspace
+    -> Git Clone
+    -> Build backend, frontend and Selenium images
+    -> Create an isolated CI network
+    -> Run and health-check the backend
+    -> Run and health-check the frontend
+    -> Run headless Selenium tests
+    -> Print logs and remove CI resources
+```
+
+The backend uses the network alias `backend`. The frontend uses `monitoring-app`, allowing Selenium to reach it without publishing a host port.
+
+## API overview
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/auth/register` | Register a user |
+| `POST` | `/api/v1/auth/login` | Validate credentials |
+| `GET` | `/api/v1/domains` | List domains |
+| `POST` | `/api/v1/domains` | Add a domain |
+| `DELETE` | `/api/v1/domains/<domain>` | Remove a domain |
+| `DELETE` | `/api/v1/domains` | Remove all domains |
+| `POST` | `/api/v1/domains/bulk` | Add multiple domains |
+| `POST` | `/api/v1/scan` | Scan all domains |
+| `POST` | `/api/v1/scan/<domain>` | Scan one domain |
+| `POST` | `/api/v1/schedule/start` | Start scheduled scans |
+| `POST` | `/api/v1/schedule/stop` | Stop scheduled scans |
+| `GET` | `/api/v1/schedule/status` | Read scheduler status |
+
+## Docker Swarm
+
+The earlier Docker Swarm deployment and operational notes are documented in:
+
+- [SWARM-SOP.md](SWARM-SOP.md)
+- [Jenkins and Docker Swarm exercise](Docs/Jenkins-Docker-Swarm-Exercise.md)
+
+The current CI pipeline validates both microservices on one Jenkins Docker agent. A future deployment pipeline can publish the two images and deploy them as separate Swarm services.
+
+## Known limitations and future improvements
+
+This is an educational portfolio project. Before production use:
+
+- Passwords must be hashed instead of stored directly in JSON.
+- JSON file storage should be replaced by a database.
+- Backend API authentication should use signed tokens or another service-authentication mechanism.
+- Scheduled jobs should use persistent storage.
+- The Flask development server should be replaced by a production WSGI server.
+- Unit and API tests should be rebuilt for the two-service architecture.
+- The two images still need versioned Docker Hub publication and Swarm deployment configuration.
+
+## Documentation
+
+- [Jenkins and Docker Swarm exercise](Docs/Jenkins-Docker-Swarm-Exercise.md)
+- [Swarm operating procedure](SWARM-SOP.md)
+- [Test results summary](TEST_RESULTS_SUMMARY.md)
+- [Product requirements](Docs/Product%20Requirements%20Document%20(PRD))
+- [High-level design](Docs/High-Level%20Design%20(HLD))
+- [Low-level design](Docs/Low-Level%20Design%20(LLD))
+
+## License
+
+Educational portfolio project, August 2026.

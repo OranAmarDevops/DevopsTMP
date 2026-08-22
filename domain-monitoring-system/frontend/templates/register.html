@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h2>Login</h2>
-<form id="loginForm">
+<h2>Register</h2>
+<form id="registerForm">
   <input type="text" id="userInput" placeholder="Username" required>
   <small id="userError" style="color:#e05c5c; display:none;"></small>
 
@@ -17,12 +17,11 @@
     <input type="checkbox" id="rememberMe"> Remember me
   </label>
 
-  <button type="submit" id="submitBtn">Login</button>
+  <button type="submit" id="submitBtn">Register</button>
 </form>
 
 <p style="text-align:center; margin-top:12px;">
-  Don't have an account? <a href="/register" style="color:#4a90d9;">Register</a>
+  Already have an account? <a href="/login" style="color:#4a90d9;">Login</a>
 </p>
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% endblock %}
