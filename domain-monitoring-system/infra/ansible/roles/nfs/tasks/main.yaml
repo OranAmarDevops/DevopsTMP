@@ -1,0 +1,29 @@
+---
+- name: Create the NFS export directory
+  ansible.builtin.file:
+    path: /mnt/export
+    state: directory
+    owner: root
+    group: root
+    mode: "0777"
+
+- name: Allow the Jenkins server to access the NFS directory
+  ansible.builtin.lineinfile:
+    path: /etc/exports
+    regexp: "^/mnt/export\\s+{{ jenkins_private_ip | regex_escape }}\\("
+    line: >-
+      /mnt/export
+      {{ jenkins_private_ip }}(rw,sync,no_subtree_check,no_root_squash)
+    create: true
+    state: present
+
+- name: Start and enable the NFS server
+  ansible.builtin.service:
+    name: nfs-server
+    state: started
+    enabled: true
+
+- name: Apply the NFS export configuration
+  ansible.builtin.command:
+    cmd: exportfs -rav
+  changed_when: false

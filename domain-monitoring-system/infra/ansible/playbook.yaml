@@ -1,0 +1,65 @@
+---
+- name: Configure all servers
+  hosts: all
+  become: true
+  roles:
+    - common_server
+
+- name: Install Docker on the Swarm servers
+  hosts: swarm
+  become: true
+  roles:
+    - docker
+
+- name: Configure the NFS server
+  hosts: nfs
+  become: true
+  vars:
+    jenkins_private_ip: >-
+      {{ hostvars[groups['jenkins'][0]]
+         ['ansible_default_ipv4']['address'] }}
+  roles:
+    - nfs
+
+- name: Configure Jenkins and initialize the Swarm manager
+  hosts: jenkins
+  become: true
+
+  vars_prompt:
+    - name: jenkins_admin_user
+      prompt: Jenkins admin username
+      default: admin
+      private: false
+
+    - name: jenkins_admin_password
+      prompt: Jenkins admin password
+      private: true
+      confirm: true
+
+    - name: dms_secret_key
+      prompt: Domain monitoring application secret
+      private: true
+      confirm: true
+
+  vars:
+    nfs_server_ip: >-
+      {{ hostvars[groups['nfs'][0]]
+         ['ansible_default_ipv4']['address'] }}
+
+  roles:
+    - jenkins
+    - swarm_manager
+
+- name: Join the workers to the Docker Swarm
+  hosts: swarm_workers
+  become: true
+  vars:
+    swarm_manager_ip: >-
+      {{ hostvars[groups['jenkins'][0]]
+         ['ansible_default_ipv4']['address'] }}
+
+    swarm_worker_token: >-
+      {{ hostvars[groups['jenkins'][0]]
+         ['swarm_worker_token'] }}
+  roles:
+    - swarm_worker

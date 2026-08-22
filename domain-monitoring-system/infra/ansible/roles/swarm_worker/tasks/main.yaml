@@ -1,0 +1,15 @@
+---
+- name: Check the current Docker Swarm status
+  ansible.builtin.command:
+    cmd: docker info
+  register: docker_info
+  changed_when: false
+
+- name: Join the Docker Swarm as a worker
+  ansible.builtin.command:
+    cmd: >-
+      docker swarm join
+      --token {{ swarm_worker_token }}
+      {{ swarm_manager_ip }}:2377
+  when: "'Swarm: active' not in docker_info.stdout"
+  no_log: true

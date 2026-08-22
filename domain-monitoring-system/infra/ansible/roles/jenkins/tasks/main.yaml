@@ -1,0 +1,164 @@
+---
+- name: Create the Jenkins image directory
+  ansible.builtin.file:
+    path: /opt/dms-jenkins-image
+    state: directory
+    mode: "0755"
+
+- name: Copy the Jenkins image files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/opt/dms-jenkins-image/{{ item }}"
+    mode: "0644"
+  loop:
+    - Dockerfile
+    - plugins.txt
+    - init.groovy
+  register: jenkins_image_files
+
+- name: Create the Jenkins home directory
+  ansible.builtin.file:
+    path: /var/jenkins_home
+    state: directory
+    mode: "0777"
+
+- name: Add the NFS mount to fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: >-
+      {{ nfs_server_ip }}:/mnt/export
+      /var/jenkins_home nfs defaults,_netdev 0 0
+    create: true
+    state: present
+
+- name: Check whether Jenkins home is mounted
+  ansible.builtin.command:
+    cmd: mountpoint -q /var/jenkins_home
+  register: jenkins_mount
+  changed_when: false
+  failed_when: false
+
+- name: Mount Jenkins home from NFS
+  ansible.builtin.command:
+    cmd: mount /var/jenkins_home
+  when: jenkins_mount.rc != 0
+
+- name: Set Jenkins home ownership
+  ansible.builtin.file:
+    path: /var/jenkins_home
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Create the Jenkins initialization directory
+  ansible.builtin.file:
+    path: /var/jenkins_home/init.groovy.d
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Install the Jenkins initialization script
+  ansible.builtin.copy:
+    src: init.groovy
+    dest: /var/jenkins_home/init.groovy.d/init.groovy
+    owner: "1000"
+    group: "1000"
+    mode: "0644"
+  register: jenkins_init_script
+
+- name: Check whether the Jenkins image exists
+  ansible.builtin.command:
+    cmd: docker image inspect dms-jenkins:latest
+  register: jenkins_image
+  changed_when: false
+  failed_when: false
+
+- name: Build the Jenkins image
+  ansible.builtin.command:
+    cmd: >-
+      docker build
+      --tag dms-jenkins:latest
+      /opt/dms-jenkins-image
+  when: jenkins_image.rc != 0 or jenkins_image_files.changed
+  register: jenkins_image_build
+  changed_when: true
+
+- name: Read the Docker socket information
+  ansible.builtin.stat:
+    path: /var/run/docker.sock
+  register: docker_socket
+
+- name: Stop the old Jenkins host service
+  ansible.builtin.systemd:
+    name: jenkins
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Check whether the Jenkins container exists
+  ansible.builtin.command:
+    cmd: docker inspect jenkins
+  register: jenkins_container
+  changed_when: false
+  failed_when: false
+
+- name: Remove Jenkins when its image or configuration changed
+  ansible.builtin.command:
+    cmd: docker rm --force jenkins
+  when:
+    - jenkins_container.rc == 0
+    - jenkins_image_build.changed or jenkins_init_script.changed
+
+- name: Run the Jenkins container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --detach
+      - --name
+      - jenkins
+      - --restart
+      - unless-stopped
+      - --group-add
+      - "{{ docker_socket.stat.gid }}"
+      - --publish
+      - "8080:8080"
+      - --volume
+      - /var/jenkins_home:/var/jenkins_home
+      - --volume
+      - /var/run/docker.sock:/var/run/docker.sock
+      - --env
+      - "JAVA_OPTS=-Djenkins.install.runSetupWizard=false"
+      - --env
+      - "JENKINS_ADMIN_USER={{ jenkins_admin_user }}"
+      - --env
+      - "JENKINS_ADMIN_PASSWORD={{ jenkins_admin_password }}"
+      - --env
+      - "DMS_SECRET_KEY={{ dms_secret_key }}"
+      - dms-jenkins:latest
+  when:
+    - jenkins_container.rc != 0
+      or jenkins_image_build.changed
+      or jenkins_init_script.changed
+  no_log: true
+
+- name: Start the existing Jenkins container
+  ansible.builtin.command:
+    cmd: docker start jenkins
+  when:
+    - jenkins_container.rc == 0
+    - not jenkins_image_build.changed
+    - not jenkins_init_script.changed
+  changed_when: false
+
+- name: Wait for Jenkins to become available
+  ansible.builtin.uri:
+    url: http://127.0.0.1:8080/login
+    status_code:
+      - 200
+      - 403
+  register: jenkins_health
+  retries: 30
+  delay: 5
+  until: jenkins_health.status in [200, 403]

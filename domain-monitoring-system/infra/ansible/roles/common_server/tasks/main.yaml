@@ -1,0 +1,9 @@
+---
+- name: Install common packages
+  become: true
+  ansible.builtin.dnf:
+    name:
+      - git
+      - nfs-utils
+    state: present
+    update_cache: true

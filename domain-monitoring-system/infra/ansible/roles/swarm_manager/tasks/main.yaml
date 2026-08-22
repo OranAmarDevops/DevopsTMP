@@ -1,0 +1,25 @@
+---
+- name: Check the current Docker Swarm status
+  ansible.builtin.command:
+    cmd: docker info
+  register: docker_info
+  changed_when: false
+
+- name: Initialize Docker Swarm
+  ansible.builtin.command:
+    cmd: >-
+      docker swarm init
+      --advertise-addr {{ ansible_default_ipv4.address }}
+  when: "'Swarm: active' not in docker_info.stdout"
+
+- name: Get the worker join token
+  ansible.builtin.command:
+    cmd: docker swarm join-token -q worker
+  register: worker_token
+  changed_when: false
+  no_log: true
+
+- name: Save the worker join token
+  ansible.builtin.set_fact:
+    swarm_worker_token: "{{ worker_token.stdout }}"
+  no_log: true
