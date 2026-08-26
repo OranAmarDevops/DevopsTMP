@@ -8,7 +8,7 @@ Type=simple
 User={{ jenkins_agent_user }}
 Group={{ jenkins_agent_user }}
 WorkingDirectory={{ jenkins_agent_work_dir }}
-ExecStart=/usr/bin/java -jar {{ jenkins_agent_work_dir }}/agent.jar -url {{ jenkins_controller_url_runtime }} -secret @{{ jenkins_agent_work_dir }}/secret -name {{ jenkins_agent_name_runtime }} -webSocket -workDir {{ jenkins_agent_work_dir }}
+ExecStart=/usr/bin/java -Djava.io.tmpdir={{ jenkins_agent_work_dir }}/tmp -jar {{ jenkins_agent_work_dir }}/agent.jar -url {{ jenkins_controller_url_runtime }} -secret @{{ jenkins_agent_work_dir }}/secret -name {{ jenkins_agent_name_runtime }} -webSocket -workDir {{ jenkins_agent_work_dir }}
 Restart=always
 RestartSec=10
 TimeoutStopSec=30

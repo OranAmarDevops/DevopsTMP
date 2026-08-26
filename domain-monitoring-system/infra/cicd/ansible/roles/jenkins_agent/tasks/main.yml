@@ -1,8 +1,32 @@
 ---
-- name: Install Java for the Jenkins agent
+- name: Install Java 21 for the Jenkins agent
   ansible.builtin.package:
-    name: java-17-amazon-corretto-headless
+    name: java-21-amazon-corretto-headless
     state: present
+  notify: Restart Jenkins agent service
+
+- name: Read the active Java executable
+  ansible.builtin.command:
+    argv:
+      - readlink
+      - --canonicalize
+      - /usr/bin/java
+  register: jenkins_agent_active_java
+  changed_when: false
+
+- name: Select Amazon Corretto 21 as the default Java runtime
+  ansible.builtin.command:
+    argv:
+      - alternatives
+      - --set
+      - java
+      - "/usr/lib/jvm/java-21-amazon-corretto.{{ ansible_architecture }}/bin/java"
+  when: >-
+    jenkins_agent_active_java.stdout
+    != '/usr/lib/jvm/java-21-amazon-corretto.'
+       ~ ansible_architecture
+       ~ '/bin/java'
+  notify: Restart Jenkins agent service
 
 - name: Create Jenkins agent system user
   ansible.builtin.user:
@@ -13,6 +37,14 @@
     create_home: true
     system: true
     state: present
+
+- name: Create Jenkins agent temporary directory on persistent disk
+  ansible.builtin.file:
+    path: "{{ jenkins_agent_work_dir }}/tmp"
+    state: directory
+    owner: "{{ jenkins_agent_user }}"
+    group: "{{ jenkins_agent_user }}"
+    mode: "0755"
 
 - name: Select the Jenkins node name for this server
   ansible.builtin.set_fact:
