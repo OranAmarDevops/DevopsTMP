@@ -1,0 +1,71 @@
+---
+jenkins:
+  systemMessage: "Domain Monitoring Jenkins managed automatically with JCasC."
+  numExecutors: 0
+  mode: EXCLUSIVE
+  slaveAgentPort: -1
+
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "{{ jenkins_admin_user }}"
+          name: "{{ jenkins_admin_user }}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  nodes:
+    - permanent:
+        name: "{{ docker_agent_name }}"
+        remoteFS: "{{ jenkins_agent_work_dir }}"
+        numExecutors: 1
+        mode: EXCLUSIVE
+        labelString: "{{ docker_agent_label }}"
+        launcher:
+          inbound:
+            webSocket: true
+            workDirSettings:
+              disabled: false
+              failIfWorkDirIsMissing: false
+              internalDir: remoting
+              workDirPath: "{{ jenkins_agent_work_dir }}"
+
+    - permanent:
+        name: "{{ ansible_agent_name }}"
+        remoteFS: "{{ jenkins_agent_work_dir }}"
+        numExecutors: 1
+        mode: EXCLUSIVE
+        labelString: "{{ ansible_agent_label }}"
+        launcher:
+          inbound:
+            webSocket: true
+            workDirSettings:
+              disabled: false
+              failIfWorkDirIsMissing: false
+              internalDir: remoting
+              workDirPath: "{{ jenkins_agent_work_dir }}"
+
+jobs:
+  - script: |
+      pipelineJob('{{ jenkins_job_name }}') {
+        description('CI/CD pipeline for the Domain Monitoring System')
+
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('{{ jenkins_repository_url }}')
+                }
+                branch('{{ jenkins_repository_branch }}')
+              }
+            }
+
+            scriptPath('{{ jenkinsfile_path }}')
+            lightweight()
+          }
+        }
+      }

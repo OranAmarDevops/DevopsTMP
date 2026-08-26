@@ -1,0 +1,215 @@
+---
+- name: Read the application secret from the environment
+  ansible.builtin.set_fact:
+    application_secret_runtime: "{{ lookup('env', 'DMS_SECRET_KEY') }}"
+  no_log: true
+
+- name: Verify that the application secret was provided
+  ansible.builtin.assert:
+    that:
+      - application_secret_runtime | length > 0
+    fail_msg: >-
+      Export DMS_SECRET_KEY before deploying the application.
+  no_log: true
+
+- name: Create the persistent backend data directory
+  ansible.builtin.file:
+    path: "{{ production_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check whether the application network exists
+  ansible.builtin.command:
+    cmd: docker network inspect "{{ production_network }}"
+  register: production_network_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Create the application network
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - create
+      - "{{ production_network }}"
+  when: production_network_inspect.rc != 0
+
+- name: Check whether the backend image exists locally
+  ansible.builtin.command:
+    cmd: docker image inspect "{{ backend_image }}"
+  register: backend_image_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Pull the backend image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - pull
+      - "{{ backend_image }}"
+  when: backend_image_inspect.rc != 0
+
+- name: Check whether the frontend image exists locally
+  ansible.builtin.command:
+    cmd: docker image inspect "{{ frontend_image }}"
+  register: frontend_image_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Pull the frontend image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - pull
+      - "{{ frontend_image }}"
+  when: frontend_image_inspect.rc != 0
+
+- name: Build the frontend configuration fingerprint
+  ansible.builtin.set_fact:
+    frontend_config_fingerprint: >-
+      {{ (frontend_image ~ ':' ~ application_secret_runtime)
+         | hash('sha256') }}
+  no_log: true
+
+- name: Inspect the current backend container image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - inspect
+      - --format
+      - "{% raw %}{{.Config.Image}}{% endraw %}"
+      - "{{ backend_container_name }}"
+  register: backend_container_image
+  changed_when: false
+  failed_when: false
+
+- name: Inspect the current frontend container image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - inspect
+      - --format
+      - "{% raw %}{{.Config.Image}}{% endraw %}"
+      - "{{ frontend_container_name }}"
+  register: frontend_container_image
+  changed_when: false
+  failed_when: false
+
+- name: Inspect the current frontend configuration fingerprint
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - inspect
+      - --format
+      - >-
+        {% raw %}{{ index .Config.Labels "dms.config-hash" }}{% endraw %}
+      - "{{ frontend_container_name }}"
+  register: frontend_container_fingerprint
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Decide which application containers require recreation
+  ansible.builtin.set_fact:
+    backend_container_recreate: >-
+      {{ backend_container_image.rc != 0
+         or (backend_container_image.stdout | trim) != backend_image }}
+    frontend_container_recreate: >-
+      {{ frontend_container_image.rc != 0
+         or (frontend_container_image.stdout | trim) != frontend_image
+         or frontend_container_fingerprint.rc != 0
+         or (frontend_container_fingerprint.stdout | trim)
+            != frontend_config_fingerprint
+         or backend_container_image.rc != 0
+         or (backend_container_image.stdout | trim) != backend_image }}
+  no_log: true
+
+- name: Remove the frontend container when recreation is required
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - rm
+      - --force
+      - "{{ frontend_container_name }}"
+  when:
+    - frontend_container_image.rc == 0
+    - frontend_container_recreate | bool
+
+- name: Remove the backend container when recreation is required
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - rm
+      - --force
+      - "{{ backend_container_name }}"
+  when:
+    - backend_container_image.rc == 0
+    - backend_container_recreate | bool
+
+- name: Run the backend container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --detach
+      - --name
+      - "{{ backend_container_name }}"
+      - --restart
+      - unless-stopped
+      - --network
+      - "{{ production_network }}"
+      - --publish
+      - "127.0.0.1:{{ backend_port }}:{{ backend_port }}"
+      - --volume
+      - "{{ production_data_dir }}:/app/data"
+      - "{{ backend_image }}"
+  when: backend_container_recreate | bool
+
+- name: Wait for the backend health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ backend_port }}/health"
+    status_code: 200
+  register: backend_health_check
+  retries: 30
+  delay: 3
+  until: backend_health_check.status == 200
+
+- name: Run the frontend container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --detach
+      - --name
+      - "{{ frontend_container_name }}"
+      - --restart
+      - unless-stopped
+      - --network
+      - "{{ production_network }}"
+      - --publish
+      - "{{ frontend_port }}:{{ frontend_port }}"
+      - --label
+      - "dms.config-hash={{ frontend_config_fingerprint }}"
+      - --env
+      - "SECRET_KEY={{ application_secret_runtime }}"
+      - --env
+      - "BACKEND_URL=http://{{ backend_container_name }}:{{ backend_port }}"
+      - "{{ frontend_image }}"
+  no_log: true
+  when: frontend_container_recreate | bool
+
+- name: Wait for the frontend health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ frontend_port }}/health"
+    status_code: 200
+  register: frontend_health_check
+  retries: 30
+  delay: 3
+  until: frontend_health_check.status == 200

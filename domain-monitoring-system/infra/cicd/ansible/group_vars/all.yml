@@ -1,0 +1,37 @@
+---
+project_name: domain-monitoring-system
+aws_region: eu-central-1
+
+jenkins_http_port: 8080
+jenkins_home: /var/jenkins_home
+jenkins_container_name: jenkins
+jenkins_config_dir: /opt/dms-jenkins
+jenkins_image: dms-jenkins:latest
+jenkins_admin_user: oran
+jenkins_job_name: domain-monitoring-cicd
+
+jenkins_repository_url: https://github.com/OranAmarDevops/DevopsTMP.git
+jenkins_repository_branch: "*/main"
+jenkinsfile_path: domain-monitoring-system/Jenkins/Jenkinsfile.iac-cicd
+
+jenkins_agent_user: jenkins
+jenkins_agent_work_dir: /opt/jenkins-agent
+
+docker_agent_name: docker-agent
+docker_agent_label: docker
+
+ansible_agent_name: ansible-agent
+ansible_agent_label: ansible
+
+docker_repository: oranamar2003/domain-monitoring-system
+image_tag: latest
+backend_image: "{{ docker_repository }}:backend-{{ image_tag }}"
+frontend_image: "{{ docker_repository }}:frontend-{{ image_tag }}"
+
+production_network: dms-network
+production_data_dir: /opt/domain-monitoring/data
+backend_container_name: dms-backend
+frontend_container_name: dms-frontend
+
+frontend_port: 5000
+backend_port: 5001

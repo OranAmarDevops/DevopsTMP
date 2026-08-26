@@ -1,0 +1,151 @@
+---
+- name: Read Jenkins admin password from the environment
+  ansible.builtin.set_fact:
+    jenkins_admin_password_runtime: >-
+      {{ lookup('env', 'JENKINS_ADMIN_PASSWORD') }}
+  no_log: true
+
+- name: Verify that Jenkins admin password was provided
+  ansible.builtin.assert:
+    that:
+      - jenkins_admin_password_runtime | length > 0
+    fail_msg: >-
+      Export JENKINS_ADMIN_PASSWORD before running the playbook.
+  no_log: true
+
+- name: Create persistent Jenkins home directory
+  ansible.builtin.file:
+    path: "{{ jenkins_home }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0755"
+
+- name: Create Jenkins configuration directory
+  ansible.builtin.file:
+    path: "{{ jenkins_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Copy Jenkins Dockerfile
+  ansible.builtin.copy:
+    src: Dockerfile
+    dest: "{{ jenkins_config_dir }}/Dockerfile"
+    owner: root
+    group: root
+    mode: "0644"
+  register: jenkins_dockerfile_copy
+
+- name: Copy Jenkins plugins list
+  ansible.builtin.copy:
+    src: plugins.txt
+    dest: "{{ jenkins_config_dir }}/plugins.txt"
+    owner: root
+    group: root
+    mode: "0644"
+  register: jenkins_plugins_copy
+
+- name: Check whether the Jenkins image exists
+  ansible.builtin.command:
+    cmd: docker image inspect "{{ jenkins_image }}"
+  register: jenkins_image_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Build customized Jenkins image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - build
+      - --pull
+      - --tag
+      - "{{ jenkins_image }}"
+      - "{{ jenkins_config_dir }}"
+  register: jenkins_image_build
+  when: >-
+    jenkins_image_inspect.rc != 0
+    or jenkins_dockerfile_copy.changed
+    or jenkins_plugins_copy.changed
+
+- name: Render Jenkins Configuration as Code
+  ansible.builtin.template:
+    src: jenkins.yaml.j2
+    dest: "{{ jenkins_config_dir }}/jenkins.yaml"
+    owner: "1000"
+    group: "1000"
+    mode: "0600"
+  register: jenkins_casc_template
+
+- name: Check whether the Jenkins container exists
+  ansible.builtin.command:
+    cmd: docker container inspect "{{ jenkins_container_name }}"
+  register: jenkins_container_inspect
+  changed_when: false
+  failed_when: false
+
+- name: Check whether the Jenkins container is running
+  ansible.builtin.command:
+    argv:
+      - docker
+      - ps
+      - --quiet
+      - --filter
+      - "name=^/{{ jenkins_container_name }}$"
+  register: jenkins_running_container
+  changed_when: false
+
+- name: Remove Jenkins container when recreation is required
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - rm
+      - --force
+      - "{{ jenkins_container_name }}"
+  when:
+    - jenkins_container_inspect.rc == 0
+    - >-
+      (jenkins_image_build is changed)
+      or jenkins_casc_template.changed
+      or (jenkins_running_container.stdout | trim == "")
+
+- name: Run Jenkins container
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --detach
+      - --name
+      - "{{ jenkins_container_name }}"
+      - --restart
+      - unless-stopped
+      - --publish
+      - "{{ jenkins_http_port }}:8080"
+      - --volume
+      - "{{ jenkins_home }}:/var/jenkins_home"
+      - --volume
+      - "{{ jenkins_config_dir }}/jenkins.yaml:/var/jenkins_home/casc_configs/jenkins.yaml:ro"
+      - --env
+      - "CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs/jenkins.yaml"
+      - --env
+      - "JAVA_OPTS=-Djenkins.install.runSetupWizard=false"
+      - --env
+      - "JENKINS_ADMIN_PASSWORD={{ jenkins_admin_password_runtime }}"
+      - "{{ jenkins_image }}"
+  no_log: true
+  when: >-
+    jenkins_container_inspect.rc != 0
+    or (jenkins_image_build is changed)
+    or jenkins_casc_template.changed
+    or (jenkins_running_container.stdout | trim == "")
+
+- name: Wait for Jenkins to become available
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ jenkins_http_port }}/login"
+    status_code: 200
+  register: jenkins_health_check
+  retries: 60
+  delay: 5
+  until: jenkins_health_check.status == 200

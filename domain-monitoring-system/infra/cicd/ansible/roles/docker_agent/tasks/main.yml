@@ -1,0 +1,11 @@
+- name: Ensure docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+
+- name: Add Jenkins agent user to the docker group
+  ansible.builtin.user:
+    name: "{{ jenkins_agent_user }}"
+    groups: docker
+    append: true
+  notify: Restart Jenkins agent service

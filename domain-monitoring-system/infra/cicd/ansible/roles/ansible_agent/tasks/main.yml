@@ -1,0 +1,24 @@
+- name: Install ansible-core using DNF package manager
+  ansible.builtin.dnf:
+    name: ansible-core
+    state: present
+
+- name: Execute ansible --version to verify the installation
+  ansible.builtin.command: ansible --version
+  register: ansible_version_output
+  changed_when: false
+
+- name: Display the installed Ansible version details
+  ansible.builtin.debug:
+    var: ansible_version_output.stdout_lines
+
+- name: Install python3-boto3
+  ansible.builtin.dnf:
+    name:
+      - python3-boto3
+    state: present
+
+- name: Install amazon.aws Ansible Collection
+  ansible.builtin.command:
+    cmd: ansible-galaxy collection install amazon.aws:==7.2.0 -p /usr/share/ansible/collections
+    creates:  /usr/share/ansible/collections/ansible_collections/amazon/aws

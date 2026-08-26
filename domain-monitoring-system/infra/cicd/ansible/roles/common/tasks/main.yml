@@ -1,0 +1,10 @@
+---
+- name: Install common packages
+  become: true
+  ansible.builtin.dnf:
+    name:
+      - git
+      - curl-minimal
+      - unzip
+    state: present
+    update_cache: true

@@ -1,0 +1,11 @@
+---
+- name: Deploy the Domain Monitoring application to production
+  hosts: production
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  roles:
+    - common
+    - docker
+    - production

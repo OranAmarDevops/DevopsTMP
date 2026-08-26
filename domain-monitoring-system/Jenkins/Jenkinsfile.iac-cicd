@@ -1,0 +1,260 @@
+pipeline {
+    agent none
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        AWS_DEFAULT_REGION = 'eu-central-1'
+        TF_IN_AUTOMATION   = 'true'
+        DOCKER_REPOSITORY  = 'oranamar2003/domain-monitoring-system'
+    }
+
+    stages {
+        stage('Checkout') {
+            agent { label 'docker' }
+
+            steps {
+                deleteDir()
+                checkout scm
+
+                script {
+                    env.IMAGE_TAG = sh(
+                        script: 'git rev-parse --short=7 HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    env.BACKEND_IMAGE = "${env.DOCKER_REPOSITORY}:backend-${env.IMAGE_TAG}"
+                    env.FRONTEND_IMAGE = "${env.DOCKER_REPOSITORY}:frontend-${env.IMAGE_TAG}"
+                    env.CI_NETWORK = "dms-ci-${env.BUILD_NUMBER}"
+                    env.BACKEND_CONTAINER = "dms-backend-${env.BUILD_NUMBER}"
+                    env.FRONTEND_CONTAINER = "dms-frontend-${env.BUILD_NUMBER}"
+                    env.SELENIUM_IMAGE = "domain-monitoring-selenium:${env.IMAGE_TAG}"
+                    env.SELENIUM_CONTAINER = "dms-selenium-${env.BUILD_NUMBER}"
+                }
+
+                echo "Backend image: ${env.BACKEND_IMAGE}"
+                echo "Frontend image: ${env.FRONTEND_IMAGE}"
+            }
+        }
+
+        stage('Build') {
+            agent { label 'docker' }
+
+            steps {
+                dir('domain-monitoring-system') {
+                    sh 'docker build --pull -f backend/Dockerfile -t "$BACKEND_IMAGE" .'
+                    sh 'docker build --pull -f frontend/Dockerfile -t "$FRONTEND_IMAGE" .'
+                    sh 'docker image inspect "$BACKEND_IMAGE" "$FRONTEND_IMAGE" >/dev/null'
+                }
+            }
+        }
+
+        stage('Run Application') {
+            agent { label 'docker' }
+
+            steps {
+                sh '''
+    docker network create "$CI_NETWORK"
+
+    docker run --detach \
+        --name "$BACKEND_CONTAINER" \
+        --network "$CI_NETWORK" \
+        "$BACKEND_IMAGE"
+
+    for attempt in $(seq 1 30); do
+        if docker exec "$BACKEND_CONTAINER" python -c \
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=2)"; then
+            exit 0
+        fi
+
+        sleep 2
+    done
+
+    echo "Backend did not become healthy"
+    docker logs "$BACKEND_CONTAINER"
+    exit 1
+'''
+
+                sh '''
+    docker run --detach \
+        --name "$FRONTEND_CONTAINER" \
+        --network "$CI_NETWORK" \
+        --network-alias monitoring-app \
+        --env "SECRET_KEY=ci-only-$BUILD_NUMBER" \
+        --env "BACKEND_URL=http://$BACKEND_CONTAINER:5001" \
+        "$FRONTEND_IMAGE"
+
+    for attempt in $(seq 1 30); do
+        if docker exec "$FRONTEND_CONTAINER" python -c \
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"; then
+            exit 0
+        fi
+
+        sleep 2
+    done
+
+    echo "Frontend did not become healthy"
+    docker logs "$FRONTEND_CONTAINER"
+    exit 1
+'''
+            }
+        }
+
+        stage('Selenium Test') {
+            agent { label 'docker' }
+
+            steps {
+                dir('domain-monitoring-system') {
+                    sh 'docker build --pull -f tests/Dockerfile.selenium -t "$SELENIUM_IMAGE" .'
+                }
+
+                sh '''
+    docker run --rm \
+        --name "$SELENIUM_CONTAINER" \
+        --network "$CI_NETWORK" \
+        --env "BASE_URL=http://monitoring-app:5000" \
+        --env "SELENIUM_HEADLESS=true" \
+        "$SELENIUM_IMAGE"
+'''
+            }
+        }
+
+        stage('Push Images') {
+            agent { label 'docker' }
+
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'docker-hub',
+                        usernameVariable: 'DOCKERHUB_USERNAME',
+                        passwordVariable: 'DOCKERHUB_TOKEN'
+                    )
+                ]) {
+                    sh '''
+    printf '%s' "$DOCKERHUB_TOKEN" | \
+        docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+
+    docker push "$BACKEND_IMAGE"
+    docker push "$FRONTEND_IMAGE"
+'''
+                }
+            }
+
+            post {
+                always {
+                    sh 'docker logout >/dev/null 2>&1 || true'
+                }
+            }
+        }
+
+        stage('Deploy') {
+            agent { label 'ansible' }
+
+            steps {
+                deleteDir()
+                checkout scm
+
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'aws-credentials',
+                        usernameVariable: 'AWS_ACCESS_KEY_ID',
+                        passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ),
+                    sshUserPrivateKey(
+                        credentialsId: 'production-ssh-key',
+                        keyFileVariable: 'ANSIBLE_PRIVATE_KEY_FILE',
+                        usernameVariable: 'ANSIBLE_REMOTE_USER'
+                    ),
+                    string(
+                        credentialsId: 'dms-secret-key',
+                        variable: 'DMS_SECRET_KEY'
+                    )
+                ]) {
+                    dir('domain-monitoring-system/infra/cicd/ansible') {
+                        sh '''
+    set +x
+    export ANSIBLE_CONFIG="$PWD/ansible.cfg"
+    export ANSIBLE_HOST_KEY_CHECKING=False
+
+    ansible-inventory --graph
+
+    ansible-playbook deploy-production.yml \
+        --private-key "$ANSIBLE_PRIVATE_KEY_FILE" \
+        --extra-vars "ansible_user=$ANSIBLE_REMOTE_USER" \
+        --extra-vars "image_tag=$IMAGE_TAG"
+'''
+                    }
+                }
+            }
+
+            post {
+                always {
+                    deleteDir()
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                node('docker') {
+                    sh '''
+    set +e
+
+    if [ -n "${BACKEND_CONTAINER:-}" ]; then
+        echo "Backend logs:"
+        docker logs "$BACKEND_CONTAINER" 2>/dev/null || true
+    fi
+
+    if [ -n "${FRONTEND_CONTAINER:-}" ]; then
+        echo "Frontend logs:"
+        docker logs "$FRONTEND_CONTAINER" 2>/dev/null || true
+    fi
+
+    if [ -n "${SELENIUM_CONTAINER:-}" ]; then
+        docker rm --force "$SELENIUM_CONTAINER" 2>/dev/null || true
+    fi
+
+    if [ -n "${FRONTEND_CONTAINER:-}" ]; then
+        docker rm --force "$FRONTEND_CONTAINER" 2>/dev/null || true
+    fi
+
+    if [ -n "${BACKEND_CONTAINER:-}" ]; then
+        docker rm --force "$BACKEND_CONTAINER" 2>/dev/null || true
+    fi
+
+    if [ -n "${CI_NETWORK:-}" ]; then
+        docker network rm "$CI_NETWORK" 2>/dev/null || true
+    fi
+
+    if [ -n "${SELENIUM_IMAGE:-}" ]; then
+        docker image rm "$SELENIUM_IMAGE" 2>/dev/null || true
+    fi
+
+    if [ -n "${FRONTEND_IMAGE:-}" ]; then
+        docker image rm "$FRONTEND_IMAGE" 2>/dev/null || true
+    fi
+
+    if [ -n "${BACKEND_IMAGE:-}" ]; then
+        docker image rm "$BACKEND_IMAGE" 2>/dev/null || true
+    fi
+'''
+                    deleteDir()
+                }
+            }
+
+            echo 'Pipeline finished and temporary CI resources were cleaned.'
+        }
+        success {
+            echo 'Pipeline completed successfully.'
+        }
+        failure {
+            echo 'Pipeline failed. Check the failed stage logs.'
+        }
+    }
+}

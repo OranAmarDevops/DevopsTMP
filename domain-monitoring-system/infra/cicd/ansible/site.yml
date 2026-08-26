@@ -1,0 +1,35 @@
+---
+
+- name: Configure Jenkins controller
+  hosts: jenkins_controller
+  become: true
+  roles:
+    - common
+    - docker
+    - jenkins_controller
+
+- name: Configure Docker Jenkins agent
+  hosts: docker_agent
+  become: true
+
+  roles:
+    - common
+    - docker
+    - jenkins_agent
+    - docker_agent
+
+- name: Configure Ansible Jenkins agent
+  hosts: ansible_agent
+  become: true
+  roles:
+    - common
+    - ansible_agent
+    - jenkins_agent
+
+- name: Configure production application servers
+  hosts: production
+  become: true
+  roles:
+    - common
+    - docker
+    - production

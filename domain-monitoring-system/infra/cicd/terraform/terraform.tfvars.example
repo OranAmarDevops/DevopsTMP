@@ -1,0 +1,6 @@
+aws_region                = "eu-central-1"
+project_name              = "domain-monitoring-system"
+instance_type             = "t3.micro"
+key_name                  = "docker-swarm-key"
+admin_cidr                = "YOUR_PUBLIC_IP/32"
+production_instance_count = 2

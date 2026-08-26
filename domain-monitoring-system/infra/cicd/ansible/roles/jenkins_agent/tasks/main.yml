@@ -1,0 +1,122 @@
+---
+- name: Install Java for the Jenkins agent
+  ansible.builtin.package:
+    name: java-17-amazon-corretto-headless
+    state: present
+
+- name: Create Jenkins agent system user
+  ansible.builtin.user:
+    name: "{{ jenkins_agent_user }}"
+    comment: Jenkins Agent User
+    shell: /sbin/nologin
+    home: "{{ jenkins_agent_work_dir }}"
+    create_home: true
+    system: true
+    state: present
+
+- name: Select the Jenkins node name for this server
+  ansible.builtin.set_fact:
+    jenkins_agent_name_runtime: >-
+      {{ docker_agent_name
+         if 'docker_agent' in group_names
+         else ansible_agent_name }}
+
+- name: Verify that the Jenkins controller is present in inventory
+  ansible.builtin.assert:
+    that:
+      - groups['jenkins_controller'] is defined
+      - groups['jenkins_controller'] | length == 1
+    fail_msg: >-
+      Dynamic inventory must contain exactly one Jenkins controller.
+
+- name: Build the private Jenkins controller URL
+  ansible.builtin.set_fact:
+    jenkins_controller_url_runtime: >-
+      http://{{ hostvars[groups['jenkins_controller'][0]].private_ip_address }}:{{ jenkins_http_port }}
+
+- name: Read Jenkins admin password from the environment
+  ansible.builtin.set_fact:
+    jenkins_admin_password_runtime: >-
+      {{ lookup('env', 'JENKINS_ADMIN_PASSWORD') }}
+  no_log: true
+
+- name: Verify that Jenkins admin password was provided
+  ansible.builtin.assert:
+    that:
+      - jenkins_admin_password_runtime | length > 0
+    fail_msg: >-
+      Export JENKINS_ADMIN_PASSWORD before running the playbook.
+  no_log: true
+
+- name: Wait for the Jenkins controller
+  ansible.builtin.uri:
+    url: "{{ jenkins_controller_url_runtime }}/login"
+    status_code: 200
+  register: jenkins_controller_health
+  retries: 60
+  delay: 5
+  until: jenkins_controller_health.status == 200
+
+- name: Download Jenkins agent.jar
+  ansible.builtin.get_url:
+    url: "{{ jenkins_controller_url_runtime }}/jnlpJars/agent.jar"
+    dest: "{{ jenkins_agent_work_dir }}/agent.jar"
+    owner: "{{ jenkins_agent_user }}"
+    group: "{{ jenkins_agent_user }}"
+    mode: "0644"
+    force: true
+  notify: Restart Jenkins agent service
+
+- name: Request the Jenkins agent connection definition
+  ansible.builtin.uri:
+    url: >-
+      {{ jenkins_controller_url_runtime }}/computer/{{ jenkins_agent_name_runtime | urlencode }}/jenkins-agent.jnlp
+    user: "{{ jenkins_admin_user }}"
+    password: "{{ jenkins_admin_password_runtime }}"
+    force_basic_auth: true
+    return_content: true
+    status_code: 200
+  register: jenkins_agent_jnlp
+  no_log: true
+
+- name: Extract the Jenkins agent secret
+  ansible.builtin.set_fact:
+    jenkins_agent_secret_runtime: >-
+      {{ (jenkins_agent_jnlp.content
+          | regex_findall('<argument>([0-9a-fA-F]+)</argument>'))
+          | first }}
+  no_log: true
+
+- name: Verify that the Jenkins agent secret was found
+  ansible.builtin.assert:
+    that:
+      - jenkins_agent_secret_runtime | length > 0
+    fail_msg: >-
+      Jenkins did not return a connection secret for the configured node.
+  no_log: true
+
+- name: Store the Jenkins agent secret
+  ansible.builtin.copy:
+    content: "{{ jenkins_agent_secret_runtime }}\n"
+    dest: "{{ jenkins_agent_work_dir }}/secret"
+    owner: "{{ jenkins_agent_user }}"
+    group: "{{ jenkins_agent_user }}"
+    mode: "0600"
+  no_log: true
+  notify: Restart Jenkins agent service
+
+- name: Install the Jenkins agent systemd unit
+  ansible.builtin.template:
+    src: jenkins-agent.service.j2
+    dest: /etc/systemd/system/jenkins-agent.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Jenkins agent service
+
+- name: Enable and start the Jenkins agent service
+  ansible.builtin.systemd:
+    name: jenkins-agent
+    daemon_reload: true
+    enabled: true
+    state: started
