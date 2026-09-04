@@ -12,6 +12,7 @@ services:
 
     volumes:
       - ./backend/data:/app/backend/data
+      - ./backend/logs:/app/backend/logs
 
     healthcheck:
       test:
@@ -42,6 +43,9 @@ services:
     environment:
       SECRET_KEY: ${SECRET_KEY}
       BACKEND_URL: http://backend:5001
+
+    volumes:
+      - ./frontend/logs:/app/frontend/logs
 
     depends_on:
       backend:

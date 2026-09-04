@@ -11,17 +11,28 @@ from flask import (
 )
 
 from frontend import backend_client
+from logging_setup import configure_logging
 from settings import load_settings
+from elasticapm.contrib.flask import ElasticAPM
 
 
-settings = load_settings()
-frontend_settings = settings["frontend"]
+settings = load_settings("frontend")
+frontend_settings = settings["server"]
+frontend_root = os.path.dirname(os.path.abspath(__file__))
+
+logger = configure_logging(
+    "frontend",
+    settings,
+    frontend_root
+)
 
 app = Flask(
     __name__,
     template_folder="templates",
     static_folder="static"
 )
+
+apm = ElasticAPM(app)
 
 secret_key = os.environ.get("SECRET_KEY")
 
@@ -33,9 +44,7 @@ if not secret_key:
 app.config["SECRET_KEY"] = secret_key
 
 app.permanent_session_lifetime = timedelta(
-    minutes=frontend_settings[
-        "session_lifetime_minutes"
-    ]
+    minutes=settings["session"]["lifetime_minutes"]
 )
 
 
@@ -80,6 +89,10 @@ def register():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Registration failed; backend unavailable; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
@@ -88,6 +101,17 @@ def register():
     if result.get("success"):
         session["username"] = result["username"]
         session.permanent = bool(remember_me)
+        logger.info(
+            "Registration completed; username=%s",
+            username
+        )
+    else:
+        logger.warning(
+            "Registration rejected; username=%s status=%s message=%s",
+            username,
+            status_code,
+            result.get("message")
+        )
 
     return jsonify(result), status_code
 
@@ -117,6 +141,10 @@ def login():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Login failed; backend unavailable; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
@@ -125,6 +153,17 @@ def login():
     if result.get("success"):
         session["username"] = result["username"]
         session.permanent = bool(remember_me)
+        logger.info(
+            "Login completed; username=%s",
+            username
+        )
+    else:
+        logger.warning(
+            "Login rejected; username=%s status=%s message=%s",
+            username,
+            status_code,
+            result.get("message")
+        )
 
     return jsonify(result), status_code
 
@@ -141,6 +180,10 @@ def dashboard():
             backend_client.get_domains(username)
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Dashboard load failed; backend unavailable; username=%s",
+            username
+        )
         return render_template(
             "dashboard.html",
             domains=[],
@@ -187,10 +230,23 @@ def add_domain():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Domain add failed; backend unavailable; username=%s domain=%s",
+            username,
+            domain
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Domain add completed; username=%s domain=%s status=%s success=%s",
+        username,
+        domain,
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -222,10 +278,23 @@ def remove_domain():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Domain removal failed; backend unavailable; username=%s domain=%s",
+            username,
+            domain
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Domain removal completed; username=%s domain=%s status=%s success=%s",
+        username,
+        domain,
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -247,10 +316,21 @@ def remove_all():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Remove-all failed; backend unavailable; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Remove-all completed; username=%s status=%s success=%s",
+        username,
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -268,6 +348,10 @@ def bulk_upload():
     uploaded_file = request.files.get("file")
 
     if not uploaded_file:
+        logger.warning(
+            "Bulk upload rejected; no file provided; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "No file provided"
@@ -278,6 +362,11 @@ def bulk_upload():
             "utf-8-sig"
         )
     except UnicodeDecodeError:
+        logger.warning(
+            "Bulk upload rejected; invalid encoding; username=%s filename=%s",
+            username,
+            uploaded_file.filename
+        )
         return jsonify({
             "success": False,
             "message": "The file must be a UTF-8 text file"
@@ -292,6 +381,11 @@ def bulk_upload():
             domains.append(domain)
 
     if not domains:
+        logger.warning(
+            "Bulk upload rejected; no domains found; username=%s filename=%s",
+            username,
+            uploaded_file.filename
+        )
         return jsonify({
             "success": False,
             "message": "The file does not contain domains"
@@ -305,10 +399,23 @@ def bulk_upload():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Bulk upload failed; backend unavailable; username=%s domain_count=%s",
+            username,
+            len(domains)
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Bulk upload completed; username=%s domain_count=%s status=%s success=%s",
+        username,
+        len(domains),
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -324,14 +431,29 @@ def scan_all():
         }), 401
 
     try:
+        logger.info(
+            "Domain scan requested; username=%s",
+            username
+        )
         result, status_code = (
             backend_client.scan_all(username)
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Domain scan failed; backend unavailable; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Domain scan completed; username=%s status=%s success=%s",
+        username,
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -363,10 +485,23 @@ def scan_one():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Single domain scan failed; backend unavailable; username=%s domain=%s",
+            username,
+            domain
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Single domain scan completed; username=%s domain=%s status=%s success=%s",
+        username,
+        domain,
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -387,6 +522,12 @@ def schedule_start():
     daily_time = data.get("daily_time")
 
     try:
+        logger.info(
+            "Schedule start requested; username=%s interval_hours=%s daily_time=%s",
+            username,
+            interval_hours,
+            daily_time
+        )
         result, status_code = (
             backend_client.start_schedule(
                 username,
@@ -395,10 +536,21 @@ def schedule_start():
             )
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Schedule start failed; backend unavailable; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Schedule start completed; username=%s status=%s success=%s",
+        username,
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -414,14 +566,29 @@ def schedule_stop():
         }), 401
 
     try:
+        logger.info(
+            "Schedule stop requested; username=%s",
+            username
+        )
         result, status_code = (
             backend_client.stop_schedule(username)
         )
     except backend_client.BackendUnavailable:
+        logger.error(
+            "Schedule stop failed; backend unavailable; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Backend service is unavailable"
         }), 503
+
+    logger.info(
+        "Schedule stop completed; username=%s status=%s success=%s",
+        username,
+        status_code,
+        result.get("success")
+    )
 
     return jsonify(result), status_code
 
@@ -453,7 +620,12 @@ def schedule_status():
 
 @app.get("/logout")
 def logout():
+    username = session.get("username")
     session.clear()
+    logger.info(
+        "User logged out; username=%s",
+        username or "anonymous"
+    )
     return redirect("/login")
 
 

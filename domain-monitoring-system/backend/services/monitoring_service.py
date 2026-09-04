@@ -8,7 +8,8 @@ from . import domain_service
 import threading
 from settings import load_settings
 
-monitoring_settings = load_settings()["monitoring"]
+monitoring_settings = load_settings("backend")["monitoring"]
+logger = logging.getLogger(__name__)
 
 THREAD_POOL_SIZE = monitoring_settings["thread_pool_size"]
 URLS_LIMIT = monitoring_settings["urls_limit"]
@@ -35,7 +36,20 @@ def check_domain(username, domain_entry):
         response = requests.get(f"https://{domain}",timeout=REQUEST_TIMEOUT_SECONDS
     )
         domain_entry["status"] = "Live" if response.status_code == 200 else "Down"
-    except Exception:
+        if response.status_code != 200:
+            logger.warning(
+                "HTTP check returned non-success status; username=%s domain=%s status=%s",
+                username,
+                domain,
+                response.status_code
+            )
+    except requests.RequestException:
+        logger.warning(
+            "HTTP check failed; username=%s domain=%s",
+            username,
+            domain,
+            exc_info=True
+        )
         domain_entry["status"] = "Unreachable"
 
     try:
@@ -43,19 +57,23 @@ def check_domain(username, domain_entry):
         domain_entry["ssl_expiration"] = expiration
         domain_entry["ssl_issuer"] = issuer
     except Exception:
+        logger.warning(
+            "SSL check failed; username=%s domain=%s",
+            username,
+            domain,
+            exc_info=True
+        )
         domain_entry["ssl_expiration"] = "N/A"
         domain_entry["ssl_issuer"] = "N/A"
 
-    domains = domain_service._load_domains(username)
-    for i, d in enumerate(domains):
-        if d["domain"] == domain:
-            domains[i] = domain_entry
-            break
-    domain_service._save_domains(username, domains)
-
 
 def scan_all(username):
-    domains = domain_service._load_domains(username)
+    logger.info(
+        "Scan started; username=%s",
+        username
+    )
+
+    domains = domain_service.get_domains(username)
 
     if len(domains) > URLS_LIMIT:
         domains = domains[:URLS_LIMIT]
@@ -72,13 +90,20 @@ def scan_all(username):
                 errors += 1
 
     with ThreadPoolExecutor(max_workers=THREAD_POOL_SIZE) as executor:
-        executor.map(_scan_and_count, domains)
+        list(executor.map(_scan_and_count, domains))
+    domain_service.save_domains(username, domains)
 
     elapsed = round(time.time() - start, 2)
     total = len(domains)
     error_pct = round((errors / total) * 100, 1) if total > 0 else 0
 
-    logging.info(f"Scheduled scan for {username}: {total} domains in {elapsed}s, {error_pct}% errors")
+    logger.info(
+        "Scan results; username=%s total=%s elapsed=%ss error_percentage=%s",
+        username,
+        total,
+        elapsed,
+        error_pct
+    )
     return {
         "total": total,
         "elapsed_sec": elapsed,

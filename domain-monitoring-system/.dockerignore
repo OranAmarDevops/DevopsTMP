@@ -13,6 +13,7 @@ __pycache__
 *.key
 
 logs
+**/logs/*.log
 data
 backend/data
 

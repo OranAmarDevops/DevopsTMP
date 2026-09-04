@@ -64,6 +64,7 @@ http://backend:5001
 domain-monitoring-system/
 |-- backend/
 |   |-- app.py
+|   |-- config.json
 |   |-- Dockerfile
 |   |-- requirements.txt
 |   |-- services/
@@ -71,14 +72,17 @@ domain-monitoring-system/
 |   |   |-- domain_service.py
 |   |   |-- monitoring_service.py
 |   |   `-- utils.py
-|   `-- data/                  # Runtime JSON files; ignored by Git
+|   |-- data/                  # Runtime JSON files; ignored by Git
+|   `-- logs/                  # Backend application logs
 |-- frontend/
 |   |-- app.py
 |   |-- backend_client.py
+|   |-- config.json
 |   |-- Dockerfile
 |   |-- requirements.txt
 |   |-- templates/
-|   `-- static/
+|   |-- static/
+|   `-- logs/                  # Frontend application logs
 |-- tests/
 |   |-- Dockerfile.selenium
 |   |-- requirements-selenium.txt
@@ -87,6 +91,7 @@ domain-monitoring-system/
 |   `-- Jenkinsfile.ci
 |-- Docs/
 |-- config.json
+|-- logging_setup.py
 |-- settings.py
 |-- docker-compose.yml
 |-- .dockerignore
@@ -95,16 +100,28 @@ domain-monitoring-system/
 
 ## Configuration
 
-Non-secret settings are stored in `config.json` and loaded by `settings.py`.
+Each microservice has its own non-secret configuration file:
+
+- `backend/config.json` contains the server, storage, monitoring and logging settings.
+- `frontend/config.json` contains the server, session, backend client and logging settings.
+
+The root `config.json` remains dedicated to test tooling such as Selenium. All
+configuration files are loaded through `settings.py`.
 
 | Variable | Service | Purpose |
 |---|---|---|
 | `SECRET_KEY` | Frontend | Signs the Flask session cookie; required at startup |
 | `BACKEND_URL` | Frontend | Overrides the configured backend address |
-| `APP_CONFIG_FILE` | Both | Optional path to another JSON configuration file |
+| `BACKEND_CONFIG_FILE` | Backend | Optional path to another backend JSON configuration file |
+| `FRONTEND_CONFIG_FILE` | Frontend | Optional path to another frontend JSON configuration file |
+| `APP_CONFIG_FILE` | Test tooling | Optional path to another shared test configuration file |
 | `BASE_URL` | Selenium | Overrides the UI address used by Selenium |
 
-Secrets are supplied at runtime and are not stored in the Dockerfiles or `config.json`.
+Both services log to standard output and to service-specific files using the
+format configured in their JSON files. The default file locations are
+`backend/logs/backend.log` and `frontend/logs/frontend.log`.
+
+Secrets are supplied at runtime and are not stored in the Dockerfiles or configuration files.
 
 ## Run locally without Docker
 

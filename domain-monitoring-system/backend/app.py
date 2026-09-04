@@ -1,26 +1,35 @@
-import logging
+import os
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import Flask, jsonify, request
 
-from backend.services import (
+from logging_setup import configure_logging
+from settings import load_settings
+from elasticapm.contrib.flask import ElasticAPM
+
+
+settings = load_settings("backend")
+backend_settings = settings["server"]
+backend_root = os.path.dirname(os.path.abspath(__file__))
+
+logger = configure_logging(
+    "backend",
+    settings,
+    backend_root
+)
+
+from backend.services import (  # noqa: E402
     auth_service,
     domain_service,
     monitoring_service,
 )
-from settings import load_settings
-
-
-settings = load_settings()
-backend_settings = settings["backend"]
 
 app = Flask(__name__)
+apm = ElasticAPM(app)
 
 scheduler = BackgroundScheduler()
 scheduler.start()
-
-logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
@@ -50,6 +59,10 @@ def register():
     )
 
     if not success:
+        logger.info(
+            "Registration rejected; username already exists: %s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Username already exists"
@@ -86,6 +99,10 @@ def login():
     )
 
     if not success:
+        logger.warning(
+            "Login failed for username: %s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "Invalid username or password"
@@ -143,10 +160,21 @@ def add_domain():
     )
 
     if not success:
+        logger.info(
+            "Domain add skipped; already exists; username=%s domain=%s",
+            username,
+            domain
+        )
         return jsonify({
             "success": False,
             "message": "Domain already exists"
         }), 409
+
+    logger.info(
+        "Domain added; username=%s domain=%s",
+        username,
+        domain
+    )
 
     return jsonify({
         "success": True,
@@ -176,10 +204,21 @@ def remove_domain(domain):
     )
 
     if not success:
+        logger.warning(
+            "Domain removal failed; not found; username=%s domain=%s",
+            username,
+            domain
+        )
         return jsonify({
             "success": False,
             "message": "Domain not found"
         }), 404
+
+    logger.info(
+        "Domain removed; username=%s domain=%s",
+        username,
+        domain
+    )
 
     return jsonify({
         "success": True,
@@ -201,6 +240,11 @@ def remove_all_domains():
         }), 400
 
     domain_service.remove_all_domains(username)
+
+    logger.info(
+        "All domains removed; username=%s",
+        username
+    )
 
     return jsonify({
         "success": True,
@@ -249,6 +293,13 @@ def bulk_add_domains():
         else:
             skipped += 1
 
+    logger.info(
+        "Bulk domain upload completed; username=%s added=%s skipped=%s",
+        username,
+        added,
+        skipped
+    )
+
     return jsonify({
         "success": True,
         "message": f"Added {added} domains",
@@ -268,7 +319,20 @@ def scan_all():
             "message": "Username is required"
         }), 400
 
+    logger.info(
+        "Domain scan started; username=%s",
+        username
+    )
+
     stats = monitoring_service.scan_all(username)
+
+    logger.info(
+        "Domain scan completed; username=%s total=%s errors=%s elapsed=%ss",
+        username,
+        stats["total"],
+        stats["errors"],
+        stats["elapsed_sec"]
+    )
 
     return jsonify({
         "success": True,
@@ -309,9 +373,22 @@ def scan_one(domain):
             "message": "Domain not found"
         }), 404
 
+    logger.info(
+        "Single domain scan started; username=%s domain=%s",
+        username,
+        domain
+    )
+
     monitoring_service.check_domain(
         username,
         domain_entry
+    )
+
+    logger.info(
+        "Single domain scan completed; username=%s domain=%s status=%s",
+        username,
+        domain,
+        domain_entry["status"]
     )
 
     return jsonify({
@@ -362,6 +439,13 @@ def schedule_start():
             "%Y-%m-%d %H:%M"
         )
 
+        logger.info(
+            "Schedule started; username=%s interval_hours=%s next_run=%s",
+            username,
+            interval_hours,
+            next_run
+        )
+
         return jsonify({
             "success": True,
             "message": (
@@ -397,6 +481,13 @@ def schedule_start():
             "%Y-%m-%d %H:%M"
         )
 
+        logger.info(
+            "Schedule started; username=%s daily_time=%s next_run=%s",
+            username,
+            daily_time,
+            next_run
+        )
+
         return jsonify({
             "success": True,
             "message": (
@@ -427,12 +518,21 @@ def schedule_stop():
     job = scheduler.get_job(job_id)
 
     if job is None:
+        logger.warning(
+            "Schedule stop requested with no active schedule; username=%s",
+            username
+        )
         return jsonify({
             "success": False,
             "message": "No active schedule"
         }), 404
 
     scheduler.remove_job(job_id)
+
+    logger.info(
+        "Schedule stopped; username=%s",
+        username
+    )
 
     return jsonify({
         "success": True,

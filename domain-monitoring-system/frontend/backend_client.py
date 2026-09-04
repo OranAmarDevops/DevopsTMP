@@ -1,3 +1,4 @@
+import logging
 import os
 from urllib.parse import quote
 
@@ -6,15 +7,16 @@ import requests
 from settings import load_settings
 
 
-frontend_settings = load_settings()["frontend"]
+frontend_settings = load_settings("frontend")["backend"]
+logger = logging.getLogger(__name__)
 
 BACKEND_URL = os.environ.get(
     "BACKEND_URL",
-    frontend_settings["backend_base_url"]
+    frontend_settings["base_url"]
 ).rstrip("/")
 
 REQUEST_TIMEOUT = frontend_settings[
-    "backend_timeout_seconds"
+    "timeout_seconds"
 ]
 
 
@@ -33,6 +35,11 @@ def _request(method, path, **kwargs):
             **kwargs
         )
     except requests.RequestException as exc:
+        logger.exception(
+            "Backend request failed; method=%s path=%s",
+            method,
+            path
+        )
         raise BackendUnavailable(
             "Backend service is unavailable"
         ) from exc
@@ -40,6 +47,12 @@ def _request(method, path, **kwargs):
     try:
         data = response.json()
     except ValueError:
+        logger.error(
+            "Backend returned invalid JSON; method=%s path=%s status=%s",
+            method,
+            path,
+            response.status_code
+        )
         return {
             "success": False,
             "message": "Backend returned an invalid response"

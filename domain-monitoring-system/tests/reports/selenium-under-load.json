@@ -1,0 +1,41 @@
+{
+  "run_label": "under-load",
+  "recorded_at": "2026-09-04T08:32:28.150279+00:00",
+  "base_url": "http://127.0.0.1:5000",
+  "iterations": 5,
+  "registration_to_dashboard_ms": 655.62,
+  "dashboard_wall_clock_ms": {
+    "average": 531.18,
+    "median": 572.15,
+    "p95": 694.11,
+    "maximum": 694.11
+  },
+  "dashboard_navigation_ms": {
+    "average": 412.02,
+    "median": 372.9,
+    "p95": 673.3,
+    "maximum": 673.3
+  },
+  "samples": [
+    {
+      "wall_clock_ms": 603.73,
+      "navigation_ms": 482.1
+    },
+    {
+      "wall_clock_ms": 572.15,
+      "navigation_ms": 372.9
+    },
+    {
+      "wall_clock_ms": 435.26,
+      "navigation_ms": 332.2
+    },
+    {
+      "wall_clock_ms": 350.64,
+      "navigation_ms": 199.6
+    },
+    {
+      "wall_clock_ms": 694.11,
+      "navigation_ms": 673.3
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "run_label": "baseline",
+  "recorded_at": "2026-09-04T08:27:23.931873+00:00",
+  "base_url": "http://127.0.0.1:5000",
+  "iterations": 5,
+  "registration_to_dashboard_ms": 754.86,
+  "dashboard_wall_clock_ms": {
+    "average": 330.04,
+    "median": 331.93,
+    "p95": 462.79,
+    "maximum": 462.79
+  },
+  "dashboard_navigation_ms": {
+    "average": 176.62,
+    "median": 159.6,
+    "p95": 283.3,
+    "maximum": 283.3
+  },
+  "samples": [
+    {
+      "wall_clock_ms": 209.19,
+      "navigation_ms": 128.0
+    },
+    {
+      "wall_clock_ms": 331.93,
+      "navigation_ms": 168.3
+    },
+    {
+      "wall_clock_ms": 372.6,
+      "navigation_ms": 159.6
+    },
+    {
+      "wall_clock_ms": 273.67,
+      "navigation_ms": 143.9
+    },
+    {
+      "wall_clock_ms": 462.79,
+      "navigation_ms": 283.3
+    }
+  ]
+}

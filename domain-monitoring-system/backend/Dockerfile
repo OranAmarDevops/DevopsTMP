@@ -6,7 +6,7 @@ COPY backend/requirements.txt ./requirements.txt
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY settings.py config.json ./
+COPY settings.py logging_setup.py ./
 COPY backend ./backend
 
 EXPOSE 5001

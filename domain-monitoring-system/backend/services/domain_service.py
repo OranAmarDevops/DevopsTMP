@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import threading
 from settings import load_settings
@@ -6,7 +7,8 @@ from settings import load_settings
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )
-storage_settings = load_settings()["storage"]
+storage_settings = load_settings("backend")["storage"]
+logger = logging.getLogger(__name__)
 
 configured_data_dir = storage_settings["data_dir"]
 DATA_DIR = (
@@ -40,13 +42,33 @@ def _load_domains(username):
     file = _get_domains_file(username)
     if not os.path.exists(file):
         return []
-    with open(file, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        logger.exception(
+            "Failed to read domains JSON; username=%s file=%s",
+            username,
+            file
+        )
+        raise
 
 def _save_domains(username, domains):
     file = _get_domains_file(username)
-    with open(file, 'w', encoding='utf-8') as f:
-        json.dump(domains, f, indent=2)
+    try:
+        with open(file, "w", encoding="utf-8") as f:
+            json.dump(domains, f, indent=2)
+    except OSError:
+        logger.exception(
+            "Failed to write domains JSON; username=%s file=%s",
+            username,
+            file
+        )
+        raise
+
+def save_domains(username, domains):
+    with _get_lock(username):
+        _save_domains(username, domains)
 
 def remove_all_domains(username):
     with _get_lock(username):

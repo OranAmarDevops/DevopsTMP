@@ -1,4 +1,4 @@
-from locust import HttpUser, task, between
+from locust import HttpUser, task, between, tag
 import logging
 import time
 import uuid
@@ -52,10 +52,67 @@ class DomainMonitorUser(HttpUser):
         res = self.client.get("/dashboard")
         logger.info(f"view_dashboard: status={res.status_code}")
 
-    @task(2)
-    def add_domain(self):
+    @tag("single")
+    @task
+    def single_domain_submission(self):
         if not self.logged_in:
             return
-        domain = f"test-{uuid.uuid4().hex[:8]}.com"
-        res = self.client.post("/add_domain", json={'domain': domain})
-        logger.info(f"add_domain: status={res.status_code}")
+
+        domain = f"single-{uuid.uuid4().hex[:12]}.example.com"
+
+        with self.client.post(
+            "/add_domain",
+            json={"domain": domain},
+            name="Single domain submission",
+            catch_response=True
+        ) as response:
+            if response.status_code == 201:
+                response.success()
+            else:
+                response.failure(
+                    f"Unexpected status {response.status_code}: "
+                    f"{response.text[:200]}"
+                )
+
+        logger.info(
+            "single_domain_submission: status=%s",
+            response.status_code
+        )
+
+    @tag("bulk")
+    @task
+    def bulk_domain_submission(self):
+        if not self.logged_in:
+            return
+
+        domains = [
+            f"bulk-{uuid.uuid4().hex[:12]}.example.com"
+            for _ in range(10)
+        ]
+        file_content = "\n".join(domains)
+
+        with self.client.post(
+            "/bulk_upload",
+            files={
+                "file": (
+                    "domains.txt",
+                    file_content,
+                    "text/plain"
+                )
+            },
+            name="Bulk domain submission",
+            catch_response=True
+        ) as response:
+            if response.status_code == 201:
+                response.success()
+            else:
+                response.failure(
+                    f"Unexpected status {response.status_code}: "
+                    f"{response.text[:200]}"
+                )
+
+        logger.info(
+            "bulk_domain_submission: status=%s domains=%s",
+            response.status_code,
+            len(domains)
+        )

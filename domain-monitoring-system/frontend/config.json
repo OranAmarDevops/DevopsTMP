@@ -1,0 +1,21 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false
+  },
+  "session": {
+    "lifetime_minutes": 30
+  },
+  "backend": {
+    "base_url": "http://127.0.0.1:5001",
+    "timeout_seconds": 10
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "[%(asctime)s] [%(levelname)s] [%(name)s:%(funcName)s:%(lineno)d] %(message)s",
+    "date_format": "%Y-%m-%d %H:%M:%S",
+    "directory": "logs",
+    "file_name": "frontend.log"
+  }
+}
